@@ -11,6 +11,7 @@
 - [功能与系统设计](docs/functional-spec.md)
 - [前后端 API 契约](docs/api-contract.md)
 - [本地开发与首次初始化](docs/development.md)
+- [Windows 启动与四角色验收](docs/windows-setup.md)
 - [数据库迁移说明](database/README.md)
 - [Flyway 迁移目录](backend/src/main/resources/db/migration)
 - [可复现 Node 22 API 闭环脚本](scripts/runtime-smoke.mjs)
