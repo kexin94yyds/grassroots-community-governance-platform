@@ -1,0 +1,33 @@
+# macOS / IDE
+.DS_Store
+.idea/
+.vscode/
+*.iml
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+.env.local
+.env.*.local
+application-local.yml
+application-local.yaml
+
+# Backend
+backend/target/
+backend/logs/
+backend/uploads/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+
+# Test and tooling output
+coverage/
+__pycache__/
+*.py[cod]
+*.log
+*.tmp

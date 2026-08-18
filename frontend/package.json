@@ -1,0 +1,32 @@
+{
+  "name": "community-grid-governance-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "engines": {
+    "node": "22.x"
+  },
+  "scripts": {
+    "serve": "vue-cli-service serve",
+    "build": "vue-cli-service build",
+    "lint": "vue-cli-service lint"
+  },
+  "dependencies": {
+    "axios": "1.19.0",
+    "core-js": "3.49.0",
+    "element-ui": "2.15.14",
+    "leaflet": "1.9.4",
+    "vue": "2.7.16",
+    "vue-router": "3.6.5",
+    "vuex": "3.6.2"
+  },
+  "devDependencies": {
+    "@babel/eslint-parser": "7.28.6",
+    "@vue/cli-plugin-babel": "5.0.8",
+    "@vue/cli-plugin-eslint": "5.0.8",
+    "@vue/cli-service": "5.0.8",
+    "babel-plugin-component": "1.1.1",
+    "eslint": "8.57.1",
+    "eslint-plugin-vue": "9.33.0",
+    "vue-template-compiler": "2.7.16"
+  }
+}
