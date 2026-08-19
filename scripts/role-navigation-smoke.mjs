@@ -1,7 +1,10 @@
 #!/usr/bin/env node
 
 import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import path from 'node:path'
 import process from 'node:process'
+import { fileURLToPath } from 'node:url'
 
 function required(name, secret = false) {
   const value = process.env[name]
@@ -14,6 +17,16 @@ if (Number(process.versions.node.split('.')[0]) !== 22) {
 }
 if (required('ROLE_SMOKE_CONFIRM_ISOLATED') !== 'YES') {
   throw new Error('ROLE_SMOKE_CONFIRM_ISOLATED must be exactly YES')
+}
+
+const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+const matrixPath = path.join(projectRoot, 'scripts', 'role-workbench-matrix.json')
+const matrix = JSON.parse(fs.readFileSync(matrixPath, 'utf8'))
+const roleEnvNames = {
+  SYSTEM_ADMIN: 'ADMIN',
+  COMMUNITY_STAFF: 'COMMUNITY',
+  GRID_WORKER: 'GRID',
+  RESIDENT: 'RESIDENT'
 }
 
 const rawBase = required('ROLE_SMOKE_BASE_URL').replace(/\/+$/, '')
@@ -68,6 +81,30 @@ class Client {
     return envelope.data
   }
 
+  async probe(path, { method = 'GET', body } = {}) {
+    const headers = { Accept: 'application/json' }
+    const cookie = this.cookieHeader()
+    if (cookie) headers.Cookie = cookie
+    if (body !== undefined) headers['Content-Type'] = 'application/json'
+    if (!['GET', 'HEAD', 'OPTIONS'].includes(method) && this.csrf) headers['X-XSRF-TOKEN'] = this.csrf
+    const response = await fetch(`${apiBase}${path}`, {
+      method,
+      headers,
+      body: body === undefined ? undefined : JSON.stringify(body),
+      redirect: 'manual',
+      signal: AbortSignal.timeout(20_000)
+    })
+    this.absorb(response.headers)
+    const raw = await response.text()
+    let envelope = null
+    try {
+      envelope = raw ? JSON.parse(raw) : null
+    } catch {
+      // The status remains useful for the permission probe.
+    }
+    return { status: response.status, code: envelope?.code || 'NON_JSON' }
+  }
+
   async login(username, password) {
     await this.request('/auth/csrf')
     const token = this.cookies.get('XSRF-TOKEN')
@@ -80,64 +117,107 @@ class Client {
   }
 }
 
-const matrix = [
-  {
-    label: 'ADMIN',
-    username: required('ROLE_SMOKE_ADMIN_USERNAME'),
-    password: required('ROLE_SMOKE_ADMIN_PASSWORD', true),
-    role: 'SYSTEM_ADMIN',
-    navigation: ['DASHBOARD', 'SYSTEM_USER', 'SYSTEM_ROLE', 'SYSTEM_MENU', 'EVENT_CATEGORY', 'GRID', 'RESIDENT', 'EVENT', 'TASK'],
-    statuses: [200, 200, 200, 200, 200, 200, 200, 200, 200, 403]
-  },
-  {
-    label: 'COMMUNITY',
-    username: required('ROLE_SMOKE_COMMUNITY_USERNAME'),
-    password: required('ROLE_SMOKE_COMMUNITY_PASSWORD', true),
-    role: 'COMMUNITY_STAFF',
-    navigation: ['DASHBOARD', 'GRID', 'RESIDENT', 'EVENT', 'TASK'],
-    statuses: [403, 403, 403, 403, 200, 200, 200, 200, 200, 403]
-  },
-  {
-    label: 'GRID',
-    username: required('ROLE_SMOKE_GRID_USERNAME'),
-    password: required('ROLE_SMOKE_GRID_PASSWORD', true),
-    role: 'GRID_WORKER',
-    navigation: ['DASHBOARD', 'EVENT', 'TASK'],
-    statuses: [403, 403, 403, 403, 200, 200, 200, 200, 200, 403]
-  },
-  {
-    label: 'RESIDENT',
-    username: required('ROLE_SMOKE_RESIDENT_USERNAME'),
-    password: required('ROLE_SMOKE_RESIDENT_PASSWORD', true),
-    role: 'RESIDENT',
-    navigation: ['RESIDENT_PORTAL'],
-    statuses: [403, 403, 403, 403, 403, 403, 403, 403, 403, 200]
+const profiles = Object.entries(matrix.roles).map(([role, contract]) => {
+  const envName = roleEnvNames[role]
+  if (!envName) throw new Error(`Role matrix contains unsupported role: ${role}`)
+  return {
+    label: envName,
+    role,
+    username: required(`ROLE_SMOKE_${envName}_USERNAME`),
+    password: required(`ROLE_SMOKE_${envName}_PASSWORD`, true),
+    contract
   }
-]
+})
 
-const endpoints = [
-  '/system/users', '/system/roles', '/system/menus', '/system/event-categories',
-  '/grids', '/residents', '/events', '/tasks', '/dashboard/overview', '/resident-portal/overview'
-]
+function apiPath(pathValue) {
+  const value = String(pathValue || '')
+  if (!value.startsWith('/api/')) throw new Error(`Role matrix API path must start with /api/: ${value}`)
+  return value.slice(4)
+}
+
+function resolveProbePath(pathValue) {
+  return String(pathValue).replace(/\{([^}]+)\}/g, (_match, name) => {
+    const envName = `ROLE_SMOKE_${String(name).replace(/[^A-Za-z0-9]/g, '_').toUpperCase()}_ID`
+    return process.env[envName] || (name === 'code' ? 'SYSTEM_ADMIN' : '0')
+  })
+}
+
+function allOperations() {
+  return Object.entries(matrix.roles).flatMap(([ownerRole, contract]) =>
+    (contract.writeGroups || []).flatMap(group =>
+      (group.operations || []).map(operation => ({ ownerRole, group, operation }))
+    )
+  )
+}
+
+function assertStatsPayload(payload, role) {
+  assert.ok(payload && typeof payload === 'object', `${role} statistics must be an object`)
+  for (const field of matrix.statsFields || []) {
+    assert.ok(Object.hasOwn(payload, field), `${role} statistics missing ${field}`)
+  }
+  assert.ok(payload.metrics && typeof payload.metrics === 'object', `${role} metrics must be an object`)
+  assert.ok(Array.isArray(payload.focusItems), `${role} focusItems must be an array`)
+  assert.ok(Array.isArray(payload.recentItems), `${role} recentItems must be an array`)
+}
 
 async function main() {
   const results = []
-  for (const profile of matrix) {
+  const clients = new Map()
+  const permissionsByRole = new Map()
+  for (const profile of profiles) {
     const client = new Client(profile.label)
+    clients.set(profile.role, client)
     const user = await client.login(profile.username, profile.password)
     assert.deepEqual(user.roles, [profile.role], `${profile.label} role`)
+    permissionsByRole.set(profile.role, new Set(user.permissions || []))
     const navigation = await client.request('/auth/navigation')
-    assert.deepEqual(navigation.map(item => item.code), profile.navigation, `${profile.label} navigation`)
-    for (const [index, endpoint] of endpoints.entries()) {
-      const expectedStatus = profile.statuses[index]
-      await client.request(endpoint, {
-        status: expectedStatus,
-        code: expectedStatus === 200 ? 'OK' : 'FORBIDDEN'
-      })
+    const expectedCodes = profile.contract.navigation.map(item => item.code)
+    assert.equal(expectedCodes.length, matrix.exactNavigationCounts[profile.role], `${profile.label} matrix count`)
+    assert.ok(expectedCodes.length >= matrix.minimumNavigationEntries, `${profile.label} has fewer than six entries`)
+    assert.deepEqual(navigation.map(item => item.code), expectedCodes, `${profile.label} navigation`)
+    for (const entry of profile.contract.navigation) {
+      const payload = await client.request(apiPath(entry.readApi))
+      assert.ok(payload !== undefined, `${profile.label}/${entry.code} read returned no data`)
     }
-    results.push({ role: profile.role, navigation: profile.navigation })
+    const stats = await client.request(apiPath(profile.contract.statsApi.path))
+    assertStatsPayload(stats, profile.role)
+    results.push({
+      role: profile.role,
+      navigation: expectedCodes,
+      stats: { api: profile.contract.statsApi.path, focusItems: stats.focusItems.length, recentItems: stats.recentItems.length },
+      writeGroups: profile.contract.writeGroups.length,
+      stateTransitions: profile.contract.stateTransitions
+    })
   }
-  console.log(JSON.stringify({ result: 'ROLE NAVIGATION PASS', roles: results }, null, 2))
+
+  for (const { ownerRole, group, operation } of allOperations()) {
+    assert.ok(permissionsByRole.get(ownerRole)?.has(operation.permission),
+      `${ownerRole} is missing declared write permission ${operation.permission}`)
+    const method = operation.method.toUpperCase()
+    const probeBody = operation.probeBody === undefined ? null : operation.probeBody
+    const supportsJsonProbe = operation.probeable !== false && probeBody !== null
+    for (const forbiddenRole of operation.forbiddenRoles || []) {
+      const forbiddenClient = clients.get(forbiddenRole)
+      assert.ok(forbiddenClient, `Missing forbidden client for ${forbiddenRole}`)
+      assert.ok(!permissionsByRole.get(forbiddenRole)?.has(operation.permission),
+        `${forbiddenRole} unexpectedly owns ${operation.permission} for ${operation.id}`)
+      if (supportsJsonProbe) {
+        const forbiddenProbe = await forbiddenClient.probe(resolveProbePath(apiPath(operation.path)), {
+          method,
+          body: probeBody
+        })
+        assert.equal(forbiddenProbe.status, 403, `${forbiddenRole} must be denied ${operation.id}`)
+        assert.equal(forbiddenProbe.code, 'FORBIDDEN', `${forbiddenRole} denial code for ${operation.id}`)
+      }
+    }
+  }
+  console.log(JSON.stringify({
+    result: 'ROLE NAVIGATION PASS',
+    contractVersion: matrix.contractVersion,
+    roles: results,
+    permissionProbes: allOperations().filter(({ operation }) => operation.probeable !== false && operation.probeBody !== null)
+      .reduce((count, { operation }) => count + (operation.forbiddenRoles || []).length, 0)
+  }, null, 2))
 }
 
 main().catch(error => {

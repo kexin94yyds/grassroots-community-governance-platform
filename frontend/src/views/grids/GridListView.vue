@@ -12,6 +12,7 @@
       action-label="新增区域"
       :action-column-width="250"
       :view-options="viewOptions"
+      :default-view="routeDefaultView"
       @create="openCreate"
     >
       <template #insight>
@@ -197,6 +198,9 @@ export default {
     }
   },
   computed: {
+    routeDefaultView() {
+      return this.$route.name === 'grid-map' ? 'map' : ''
+    },
     insightMetrics() {
       const gridCount = Number(this.insight.gridCount || 0)
       const assigned = Number(this.insight.assignedGridCount || 0)
@@ -379,10 +383,11 @@ export default {
       return row.areaType === 'COMMUNITY' && this.$store.getters['session/hasRole']('SYSTEM_ADMIN')
     },
     async loadReferenceOptions() {
+      const canAssign = this.can('grid:assign')
       const [communities, workers, staff] = await Promise.allSettled([
         listCommunities(),
-        listWorkerOptions(),
-        listCommunityStaffOptions()
+        canAssign ? listWorkerOptions() : Promise.resolve([]),
+        canAssign ? listCommunityStaffOptions() : Promise.resolve([])
       ])
       if (communities.status === 'fulfilled') this.communityOptions = asOptions(communities.value, '社区')
       if (workers.status === 'fulfilled') this.workerOptions = asOptions(workers.value, '用户')

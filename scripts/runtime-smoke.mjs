@@ -301,6 +301,15 @@ function assertActions(flows, expectedActions, label) {
   }
 }
 
+function assertFlowSequence(flows, expectedActions, label) {
+  assert.ok(Array.isArray(flows), `${label}: flows must be an array`)
+  assert.deepEqual(
+    flows.map(flow => flow.action),
+    expectedActions,
+    `${label}: flow action order mismatch`
+  )
+}
+
 function assertNavigation(items, label) {
   assert.ok(Array.isArray(items), `${label}: navigation must be an array`)
   for (const item of items) {
@@ -382,17 +391,25 @@ const baseUrl = requiredEnv('SMOKE_BASE_URL')
 const adminUsername = requiredEnv('SMOKE_ADMIN_USERNAME')
 const adminPassword = requiredEnv('SMOKE_ADMIN_PASSWORD', { secret: true })
 const workerUsernamePrefix = requiredEnv('SMOKE_WORKER_USERNAME')
+const configuredWorkerUsername = (process.env.SMOKE_WORKER_FIXED_USERNAME || '').trim()
 const workerPassword = requiredEnv('SMOKE_WORKER_PASSWORD', { secret: true })
 let categoryId = (process.env.SMOKE_EVENT_CATEGORY_ID || '1').trim()
 const corsOrigin = (process.env.SMOKE_CORS_ORIGIN || 'http://localhost:5173').trim()
 const configuredResidentUsername = (process.env.SMOKE_RESIDENT_USERNAME || '').trim()
 const configuredResidentPassword = process.env.SMOKE_RESIDENT_PASSWORD || ''
+const configuredCommunityUsername = (process.env.SMOKE_COMMUNITY_USERNAME || '').trim()
+const configuredCommunityPassword = process.env.SMOKE_COMMUNITY_PASSWORD || ''
+const configuredCommunityName = (process.env.SMOKE_COMMUNITY_NAME || '').trim()
+const configuredGridName = (process.env.SMOKE_GRID_NAME || '').trim()
+const configuredResidentName = (process.env.SMOKE_RESIDENT_NAME || '').trim()
+const configuredUnscopedWorkerUsername = (process.env.SMOKE_UNSCOPED_WORKER_USERNAME || '').trim()
 const configuredSyntheticIdCard = (process.env.SMOKE_SYNTHETIC_ID_CARD || '').trim()
 const configuredSyntheticPhone = (process.env.SMOKE_SYNTHETIC_PHONE || '').trim()
 
 validatePassword('SMOKE_ADMIN_PASSWORD', adminPassword)
 validatePassword('SMOKE_WORKER_PASSWORD', workerPassword)
 if (configuredResidentPassword) validatePassword('SMOKE_RESIDENT_PASSWORD', configuredResidentPassword)
+if (configuredCommunityPassword) validatePassword('SMOKE_COMMUNITY_PASSWORD', configuredCommunityPassword)
 if (configuredSyntheticIdCard && !/^\d{17}[\dX]$/.test(configuredSyntheticIdCard)) {
   throw new Error('SMOKE_SYNTHETIC_ID_CARD must contain 18 synthetic ID-card characters')
 }
@@ -412,6 +429,7 @@ const runKey = `${Date.now()}-${randomBytes(3).toString('hex')}`
 const shortKey = runKey.slice(-12)
 const dispatcherPassword = `${randomBytes(24).toString('base64url')}Aa1!`
 const residentPassword = configuredResidentPassword || `${randomBytes(24).toString('base64url')}Rr1!`
+const lifecyclePassword = configuredCommunityPassword || workerPassword
 const residentIdCard = configuredSyntheticIdCard ||
   `${Date.now()}${String(randomBytes(4).readUInt32BE(0) % 100_000).padStart(5, '0')}`
 const idCardLast4 = residentIdCard.slice(-4)
@@ -512,10 +530,10 @@ if (demoProfileCode && !demoProfiles[demoProfileCode]) {
 }
 
 const names = demoProfiles[demoProfileCode] || {
-  community: `验证社区-${runKey}`,
-  grid: `验证网格-${runKey}`,
+  community: configuredCommunityName || `验证社区-${runKey}`,
+  grid: configuredGridName || `验证网格-${runKey}`,
   address: `验证路${shortKey}号`,
-  resident: `验证居民-${shortKey}`,
+  resident: configuredResidentName || `验证居民-${shortKey}`,
   dispatcher: `验证派发员-${shortKey}`,
   worker: `验证网格员-${shortKey}`,
   lifecycle: `验证生命周期用户-${shortKey}`,
@@ -534,19 +552,22 @@ const names = demoProfiles[demoProfileCode] || {
 }
 const workerUsername = demoProfileCode
   ? `grid-${demoProfileCode}`
-  : makeUniqueUsername(workerUsernamePrefix, 'w', runKey)
+  : configuredWorkerUsername || makeUniqueUsername(workerUsernamePrefix, 'w', runKey)
 const dispatcherUsername = demoProfileCode
   ? `dispatcher-${demoProfileCode}`
   : makeUniqueUsername('smoke-dispatcher', 'd', runKey)
 const lifecycleUsername = demoProfileCode
   ? `community-${demoProfileCode}`
-  : makeUniqueUsername('smoke-lifecycle', 'u', runKey)
+  : configuredCommunityUsername || makeUniqueUsername('smoke-lifecycle', 'u', runKey)
 const residentUsername = configuredResidentUsername || makeUniqueUsername('smoke-resident', 'r', runKey)
 const unscopedWorkerUsername = demoProfileCode
   ? `grid-standby-${demoProfileCode}`
-  : makeUniqueUsername('smoke-outscope', 'x', runKey)
+  : configuredUnscopedWorkerUsername || makeUniqueUsername('smoke-outscope', 'x', runKey)
 if (configuredResidentUsername && !/^[A-Za-z0-9_.-]{3,64}$/.test(configuredResidentUsername)) {
   throw new Error('SMOKE_RESIDENT_USERNAME must be a 3-64 character username using letters, digits, dot, underscore or hyphen')
+}
+if (configuredWorkerUsername && !/^[A-Za-z0-9_.-]{3,64}$/.test(configuredWorkerUsername)) {
+  throw new Error('SMOKE_WORKER_FIXED_USERNAME must be a 3-64 character username using letters, digits, dot, underscore or hyphen')
 }
 
 async function main() {
@@ -670,7 +691,7 @@ async function main() {
     method: 'POST',
     body: {
       username: lifecycleUsername,
-      password: workerPassword,
+      password: lifecyclePassword,
       realName: names.lifecycle,
       roleCodes: ['COMMUNITY_STAFF']
     }
@@ -689,7 +710,7 @@ async function main() {
   assert.equal(lifecycleUser.realName, `${names.lifecycle}（社区工作人员）`, '用户资料更新未生效')
 
   await pass('社区工作人员登录以验证旧会话失效', () =>
-    lifecycleClient.login(lifecycleUsername, workerPassword))
+    lifecycleClient.login(lifecycleUsername, lifecyclePassword))
 
   lifecycleUser = await pass('替换并重新激活用户角色', async () => {
     const gridWorkerRole = await admin.request(`/system/users/${lifecycleUser.id}/roles`, {
@@ -1113,7 +1134,7 @@ async function main() {
     }
   ))
   const lifecycleMe = await pass('社区工作人员登录并查询范围内审计', () =>
-    lifecycleClient.login(lifecycleUsername, workerPassword))
+    lifecycleClient.login(lifecycleUsername, lifecyclePassword))
   assert.ok(lifecycleMe.permissions.includes('resident:sensitive:audit:read'),
     '社区工作人员缺少敏感访问审计权限')
   const restrictedAudit = await lifecycleClient.request(
@@ -1167,11 +1188,30 @@ async function main() {
 
   const residentMe = await pass('居民登录并获得隔离权限', () => residentClient.login(residentUsername, residentPassword))
   assert.deepEqual(residentMe.roles, ['RESIDENT'], '居民登录角色不匹配')
-  assert.deepEqual(residentMe.permissions, ['resident:portal'], '居民权限必须收敛到服务台')
+  assert.deepEqual(
+    [...residentMe.permissions].sort(),
+    [
+      'announcement:read',
+      'resident:portal',
+      'service:application:apply',
+      'service:application:cancel',
+      'service:application:rate',
+      'service:catalog:read',
+      'workbench:resident:read'
+    ].sort(),
+    '居民权限必须收敛到本人服务中心能力'
+  )
   const residentNavigation = await pass('居民服务台动态导航', () => residentClient.request('/auth/navigation'))
   assertNavigation(residentNavigation, '居民服务台动态导航')
-  assert.deepEqual(residentNavigation.map(item => item.code), ['RESIDENT_PORTAL'],
-    '居民动态导航只能返回本人服务台菜单')
+  assert.deepEqual(residentNavigation.map(item => item.code), [
+    'RESIDENT_PORTAL',
+    'RESIDENT_REPORT',
+    'RESIDENT_EVENTS',
+    'RESIDENT_PROFILE',
+    'RESIDENT_SERVICE',
+    'RESIDENT_RATING',
+    'ANNOUNCEMENT'
+  ], '居民动态导航必须返回七个本人服务入口')
   const residentOverview = await residentClient.request('/resident-portal/overview')
   assert.equal(residentOverview.profile.id, resident.id, '居民服务台未返回本人绑定档案')
   assert.ok(Array.isArray(residentOverview.categories) && residentOverview.categories.length > 0, '居民服务台缺少事件类别')
@@ -1190,6 +1230,105 @@ async function main() {
     }),
     /HTTP 403/,
     '居民账号不应检索居民敏感字段'
+  )
+
+  const communityAnnouncement = await pass('社区公告创建', () => lifecycleClient.request('/announcements', {
+    method: 'POST',
+    body: {
+      audienceScope: 'COMMUNITY',
+      communityId: community.id,
+      title: `运行时社区公告-${shortKey}`,
+      content: `社区公告闭环验证 ${runKey}`,
+      pinned: false
+    }
+  }))
+  assertStatus(communityAnnouncement, 'DRAFT', '社区公告草稿')
+  const publishedAnnouncement = await pass('社区公告发布', () => lifecycleClient.request(
+    `/announcements/${communityAnnouncement.id}/publish`,
+    { method: 'POST', body: { version: communityAnnouncement.version, remark: '运行时公告发布' } }
+  ))
+  assertStatus(publishedAnnouncement, 'PUBLISHED', '已发布社区公告')
+  const residentAnnouncements = await pass('居民可见社区公告', () => residentClient.request('/announcements'))
+  assert.ok(
+    residentAnnouncements.some(item => item.id === publishedAnnouncement.id && item.status === 'PUBLISHED'),
+    '居民公告列表缺少已发布社区公告'
+  )
+  const withdrawnAnnouncement = await pass('社区公告撤回并对居民隐藏', () => lifecycleClient.request(
+    `/announcements/${publishedAnnouncement.id}/withdraw`,
+    { method: 'POST', body: { version: publishedAnnouncement.version, reason: '运行时撤回验证' } }
+  ))
+  assertStatus(withdrawnAnnouncement, 'WITHDRAWN', '已撤回社区公告')
+  const hiddenAnnouncements = await residentClient.request('/announcements')
+  assert.ok(!hiddenAnnouncements.some(item => item.id === withdrawnAnnouncement.id), '居民仍可看到已撤回公告')
+  await assert.rejects(
+    () => residentClient.request(`/announcements/${withdrawnAnnouncement.id}`),
+    /HTTP 404/,
+    '居民不能读取已撤回公告详情'
+  )
+  const announcementFlows = await lifecycleClient.request(`/announcements/${communityAnnouncement.id}/flows`)
+  assertFlowSequence(announcementFlows, ['CREATE', 'PUBLISH', 'WITHDRAW'], '社区公告流转顺序')
+
+  const serviceCatalogs = await pass('居民读取可申请服务目录', () => residentClient.request('/service-catalogs'))
+  assert.ok(Array.isArray(serviceCatalogs) && serviceCatalogs.length > 0, '居民服务目录不能为空')
+  const serviceCatalog = serviceCatalogs[0]
+  assert.ok(serviceCatalog.id, '服务目录缺少真实 ID')
+  const serviceRequestToken = randomUUID()
+  const serviceApplicationPayload = {
+    serviceCatalogId: serviceCatalog.id,
+    requestContent: `运行时服务申请-${runKey}`,
+    appointmentAt: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString().slice(0, 19),
+    requestToken: serviceRequestToken
+  }
+  let serviceApplication = await pass('居民服务申请提交', () => residentClient.request(
+    '/resident-portal/service-applications',
+    { method: 'POST', body: serviceApplicationPayload }
+  ))
+  assertStatus(serviceApplication, 'SUBMITTED', '居民服务申请')
+  assert.equal(serviceApplication.residentId, resident.id, '服务申请居民归属不匹配')
+  assert.equal(serviceApplication.gridId, grid.id, '服务申请网格快照不匹配')
+  const retriedServiceApplication = await pass('居民服务申请幂等令牌重试', () => residentClient.request(
+    '/resident-portal/service-applications',
+    { method: 'POST', body: serviceApplicationPayload }
+  ))
+  assert.deepEqual(
+    [retriedServiceApplication.id, retriedServiceApplication.version, retriedServiceApplication.status],
+    [serviceApplication.id, serviceApplication.version, serviceApplication.status],
+    '相同 requestToken 重试不得创建第二条服务申请'
+  )
+  serviceApplication = await pass('社区受理服务申请', () => lifecycleClient.request(
+    `/service-applications/${serviceApplication.id}/accept`,
+    { method: 'POST', body: { version: serviceApplication.version, remark: '社区受理服务申请' } }
+  ))
+  assertStatus(serviceApplication, 'ACCEPTED', '已受理服务申请')
+  assert.equal(serviceApplication.handlerUserId, lifecycleUser.id, '服务申请处理人不匹配')
+  serviceApplication = await pass('社区开始处理服务申请', () => lifecycleClient.request(
+    `/service-applications/${serviceApplication.id}/start`,
+    { method: 'POST', body: { version: serviceApplication.version, remark: '社区开始处理服务申请' } }
+  ))
+  assertStatus(serviceApplication, 'PROCESSING', '处理中服务申请')
+  serviceApplication = await pass('社区办结服务申请', () => lifecycleClient.request(
+    `/service-applications/${serviceApplication.id}/complete`,
+    {
+      method: 'POST',
+      body: {
+        version: serviceApplication.version,
+        resultSummary: `服务申请已办结-${runKey}`,
+        remark: '社区完成服务申请'
+      }
+    }
+  ))
+  assertStatus(serviceApplication, 'COMPLETED', '已办结服务申请')
+  const ratedServiceApplication = await pass('居民服务申请评分', () => residentClient.request(
+    `/resident-portal/service-applications/${serviceApplication.id}/rate`,
+    { method: 'POST', body: { version: serviceApplication.version, rating: 5, remark: '运行时服务评分' } }
+  ))
+  assertStatus(ratedServiceApplication, 'COMPLETED', '评分后服务申请')
+  assert.equal(ratedServiceApplication.rating, 5, '服务申请评分未保存')
+  const serviceApplicationFlows = await lifecycleClient.request(`/service-applications/${serviceApplication.id}/flows`)
+  assertFlowSequence(
+    serviceApplicationFlows,
+    ['APPLY', 'ACCEPT', 'START', 'COMPLETE', 'RATE'],
+    '服务申请流转顺序'
   )
 
   const residentReportedEvent = await pass('居民从本人网格上报事项', () => residentClient.request('/resident-portal/events', {
@@ -1392,6 +1531,65 @@ async function main() {
   assert.ok(workerMe.permissions.includes('task:handle'), '网格员缺少处置权限')
   const workerGrid = await worker.request(`/grids/${grid.id}`)
   assert.equal(workerGrid.id, grid.id, '网格员无法读取分配网格')
+
+  const patrolScheduledAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 19)
+  const patrolDueAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString().slice(0, 19)
+  const patrolPlan = await pass('创建巡查计划并原子生成任务', () => lifecycleClient.request('/patrol-plans', {
+    method: 'POST',
+    body: {
+      gridId: grid.id,
+      title: `运行时巡查计划-${shortKey}`,
+      inspectionContent: `巡查计划原子任务验证 ${runKey}`,
+      scheduledAt: patrolScheduledAt,
+      dueAt: patrolDueAt,
+      assigneeUserId: workerUser.id,
+      priority: 'MEDIUM'
+    }
+  }))
+  assertStatus(patrolPlan, 'ACTIVE', '巡查计划')
+  assert.equal(patrolPlan.gridId, grid.id, '巡查计划网格归属不匹配')
+  assert.equal(patrolPlan.assigneeUserId, workerUser.id, '巡查计划执行人不匹配')
+  assert.ok(patrolPlan.taskId && Number.isInteger(patrolPlan.taskVersion), '巡查计划未原子生成关联任务')
+  const patrolTask = await worker.request(`/tasks/${patrolPlan.taskId}`)
+  assertStatus(patrolTask, 'PENDING_ACCEPT', '巡查计划关联任务')
+  assert.equal(patrolTask.taskType, 'ROUTINE_INSPECTION', '巡查计划任务类型不匹配')
+  assert.equal(patrolTask.dispatcherUserId, lifecycleUser.id, '巡查任务派发人应为社区工作人员')
+  assert.equal(patrolTask.assigneeUserId, workerUser.id, '巡查任务执行人不匹配')
+  const acceptedPatrolTask = await pass('巡查任务接单', () => worker.request(
+    `/tasks/${patrolTask.id}/accept`,
+    { method: 'POST', body: { version: patrolTask.version, remark: '网格员接受巡查计划' } }
+  ))
+  assertStatus(acceptedPatrolTask, 'PROCESSING', '接单后巡查任务')
+  const pendingPatrolTask = await pass('巡查任务提交复核', () => worker.request(
+    `/tasks/${acceptedPatrolTask.id}/submit-review`,
+    {
+      method: 'POST',
+      body: {
+        version: acceptedPatrolTask.version,
+        handlingResult: `巡查计划已完成-${runKey}`,
+        attachmentIds: [],
+        remark: '提交社区复核'
+      }
+    }
+  ))
+  assertStatus(pendingPatrolTask, 'PENDING_REVIEW', '待复核巡查任务')
+  assert.notEqual(adminMe.id, patrolTask.dispatcherUserId, '巡查任务复核人不得是派发人')
+  const completedPatrolTask = await pass('非派发管理员复核巡查任务', () => admin.request(
+    `/tasks/${pendingPatrolTask.id}/review`,
+    {
+      method: 'POST',
+      body: { version: pendingPatrolTask.version, approved: true, remark: '管理员复核巡查通过' }
+    }
+  ))
+  assertStatus(completedPatrolTask, 'COMPLETED', '已完成巡查任务')
+  const patrolPage = await admin.request('/patrol-plans?page=1&size=100')
+  const completedPatrolPlan = patrolPage.items.find(item => item.id === patrolPlan.id)
+  assert.ok(completedPatrolPlan, '巡查计划列表缺少刚创建的计划')
+  assert.equal(completedPatrolPlan.status, 'COMPLETED', '巡查计划未随任务复核完成')
+  assert.equal(completedPatrolPlan.taskStatus, 'COMPLETED', '巡查计划关联任务未完成')
+  const patrolTaskFlows = await admin.request(`/tasks/${patrolPlan.taskId}/flows`)
+  assertFlowSequence(patrolTaskFlows, ['ASSIGN', 'ACCEPT', 'SUBMIT_REVIEW', 'APPROVE'], '巡查任务流转顺序')
+
   const downloadedAttachment = await pass('责任网格员授权下载事件附件', () =>
     worker.downloadFile(`/files/${attachment.id}`))
   assert.deepEqual(downloadedAttachment.bytes, attachmentBytes, '下载附件内容不一致')
@@ -1524,18 +1722,20 @@ async function main() {
     const currentOrder = `${current.reportedAt}|${String(current.id).padStart(20, '0')}`
     assert.ok(previousOrder >= currentOrder, 'D4 最近事件必须按上报时间和 ID 倒序')
   }
-  const workerDashboard = await worker.request('/dashboard/overview')
-  assertDashboardOverview(workerDashboard, '网格员数据范围看板')
-  assert.ok(workerDashboard.gridEventStats.every(item => item.gridId === grid.id),
-    '网格员看板不得返回责任范围以外的网格统计')
+  const workerWorkbench = await worker.request('/workbenches/grid/summary')
+  assert.equal(workerWorkbench.role, 'GRID_WORKER', '网格员工作台角色标识不匹配')
+  assert.ok(workerWorkbench.scopeLabel.includes('本人'), '网格员工作台必须明确按本人执行范围汇总')
+  assert.ok(workerWorkbench.metrics && typeof workerWorkbench.metrics === 'object',
+    '网格员工作台必须返回真实统计指标')
+  for (const key of ['pendingAccept', 'processing', 'pendingReview', 'overdue', 'activePatrolPlans', 'reportsLast7Days']) {
+    assert.ok(Number.isInteger(Number(workerWorkbench.metrics[key])) && Number(workerWorkbench.metrics[key]) >= 0,
+      `网格员工作台指标 ${key} 必须是非负整数`)
+  }
+  assert.ok(Array.isArray(workerWorkbench.focusItems) && Array.isArray(workerWorkbench.recentItems),
+    '网格员工作台必须返回待办与最近记录')
   const workerEvents = await worker.request(query('/events', { page: 1, size: 100 }))
-  assert.equal(
-    workerDashboard.categoryStats.reduce((total, item) => total + Number(item.eventCount), 0),
-    workerEvents.total,
-    '网格员 D4 类别统计不得汇入责任范围以外的事件'
-  )
-  assert.ok(workerDashboard.recentEvents.every(item => item.gridName === names.grid),
-    '网格员 D4 最近事件不得泄露责任范围以外的网格')
+  assert.ok(workerEvents.items.every(item => item.gridId === grid.id),
+    '网格员事件台账不得返回责任范围以外的数据')
 
   const latestGrid = await admin.request(`/grids/${grid.id}`)
   await assert.rejects(
@@ -1789,6 +1989,9 @@ async function main() {
   console.log(`independentTask=${independentTask.id}:${completedIndependentTask.status}`)
   console.log(`rejectedEvent=${rejectedEvent.id}:${rejectedEvent.status} cancelledEvent=${cancelledEvent.id}:${cancelledEvent.status}`)
   console.log(`cancelledTask=${cancelledTask.id}:${cancelledTask.status}`)
+  console.log(`announcement=${communityAnnouncement.id}:${withdrawnAnnouncement.status}`)
+  console.log(`serviceApplication=${serviceApplication.id}:${ratedServiceApplication.status}:${ratedServiceApplication.rating}`)
+  console.log(`patrolPlan=${patrolPlan.id}:${completedPatrolPlan.status} patrolTask=${patrolPlan.taskId}:${completedPatrolTask.status}`)
   console.log(`workerUsername=${workerUsername} dispatcherUsername=${dispatcherUsername}`)
   if (demoProfileCode) {
     console.log(`demoProfile=${demoProfileCode} stagedEvent=${stagedEvent.id}:${stagedEvent.status}`)

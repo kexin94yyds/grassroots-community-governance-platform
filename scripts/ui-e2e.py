@@ -386,12 +386,12 @@ def run_suite(page: Page, base_url: str, username: str, password: str, artifact_
         page.get_by_role("button", name="进入工作台").click()
     login_response = login_info.value
     check(login_response.ok, f"Login failed with HTTP {login_response.status}")
-    page.wait_for_url(f"{base_url}/dashboard")
+    page.wait_for_url(f"{base_url}/admin/home")
     page.wait_for_load_state("networkidle")
 
     progress("checking root redirect, server navigation and dashboard")
     navigate(page, f"{base_url}/")
-    page.wait_for_url(f"{base_url}/dashboard")
+    page.wait_for_url(f"{base_url}/admin/home")
     admin_navigation = validate_navigation_snapshot(fetch_envelope(page, "/api/auth/navigation"))
     check(any(item["code"] == "DASHBOARD" for item in admin_navigation), "Administrator navigation misses dashboard")
     check(any(item["code"] == "EVENT_CATEGORY" for item in admin_navigation), "Administrator navigation misses event category")
@@ -400,6 +400,7 @@ def run_suite(page: Page, base_url: str, username: str, password: str, artifact_
         sidebar_labels == [item["name"] for item in admin_navigation],
         "Administrator sidebar does not exactly render the ordered server navigation",
     )
+    navigate(page, f"{base_url}/dashboard")
     dashboard = validate_dashboard_snapshot(fetch_envelope(page, "/api/dashboard/overview"))
     check(page.locator(".dashboard-analysis-panel").count() == 3, "Dashboard misses D3/D4 analysis panels")
     check(page.locator(".grid-quality-list, .dashboard-empty").count() >= 1, "Dashboard misses grid-event statistics view")
@@ -823,7 +824,7 @@ def run_suite(page: Page, base_url: str, username: str, password: str, artifact_
         },
         "mobileOverview": {"collapsedByDefault": True, "zeroWidths": zero_widths},
         "navigationUi": {
-            "rootRedirect": "/dashboard",
+            "rootRedirect": "/admin/home",
             "serverItems": len(admin_navigation),
             "renderedItems": len(sidebar_labels),
         },
@@ -898,10 +899,19 @@ def run_resident_suite(page: Page, base_url: str, username: str, password: str, 
     page.wait_for_url(f"{base_url}/resident/home")
 
     resident_navigation = validate_navigation_snapshot(
-        fetch_envelope(page, "/api/auth/navigation"), ["RESIDENT_PORTAL"]
+        fetch_envelope(page, "/api/auth/navigation"), [
+            "RESIDENT_PORTAL",
+            "RESIDENT_REPORT",
+            "RESIDENT_EVENTS",
+            "RESIDENT_PROFILE",
+            "RESIDENT_SERVICE",
+            "RESIDENT_RATING",
+            "ANNOUNCEMENT",
+        ]
     )
     sidebar_labels = [text.strip() for text in page.locator(".app-menu .el-menu-item").all_inner_texts()]
-    check(sidebar_labels == [resident_navigation[0]["name"]], "Resident sidebar is not limited to its server navigation")
+    check(sidebar_labels == [item["name"] for item in resident_navigation],
+          "Resident sidebar does not exactly render its ordered server navigation")
     overview_snapshot = fetch_envelope(page, "/api/resident-portal/overview")
     check(overview_snapshot["status"] == 200 and overview_snapshot["body"].get("code") == "OK",
           "Resident overview API failed")
@@ -925,6 +935,7 @@ def run_resident_suite(page: Page, base_url: str, username: str, password: str, 
     )
     check(resident_attachment_snapshot is not None, "No resident-owned attachment was available for UI verification")
     resident_event = resident_attachment_snapshot["event"]
+    navigate(page, f"{base_url}/resident/events")
     resident_ledger_item = page.locator(".event-ledger li").filter(has_text=resident_event["eventNo"]).first
     resident_ledger_item.wait_for(state="visible")
     resident_ledger_item.get_by_role("button", name="附件", exact=True).click()

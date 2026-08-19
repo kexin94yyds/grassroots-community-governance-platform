@@ -53,6 +53,8 @@ for (const [index, profile] of profiles.entries()) {
       SMOKE_ADMIN_PASSWORD: adminPassword,
       SMOKE_WORKER_USERNAME: `demo-${profile.code}`,
       SMOKE_WORKER_PASSWORD: workerPassword,
+      SMOKE_COMMUNITY_USERNAME: `community-${profile.code}`,
+      SMOKE_COMMUNITY_PASSWORD: workerPassword,
       SMOKE_RESIDENT_USERNAME: `resident-${profile.code}`,
       SMOKE_EVENT_CATEGORY_ID: profile.categoryId,
       SMOKE_DEMO_PROFILE: profile.code

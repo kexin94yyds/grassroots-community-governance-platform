@@ -2,8 +2,8 @@
   <section>
     <ResourceListView
       ref="resource"
-      title="网格任务"
-      description="查看本人权限范围内的待接单、处理中和待复核任务。"
+      :title="pageTitle"
+      :description="pageDescription"
       :fetcher="listTasks"
       :columns="columns"
       :status-options="statuses"
@@ -435,6 +435,20 @@ export default {
     }
   },
   computed: {
+    routeMode() {
+      if (this.$route.name === 'grid-task') return 'mine'
+      if (this.$route.name === 'grid-history') return 'history'
+      return 'all'
+    },
+    pageTitle() {
+      return { mine: '我的任务', history: '工作历史' }[this.routeMode] || '网格任务'
+    },
+    pageDescription() {
+      return {
+        mine: '只查看本人责任范围内的待接单、处理中和待复核任务。',
+        history: '保留本人执行任务的状态、流转和处置结果，方便复盘。'
+      }[this.routeMode] || '查看本人权限范围内的待接单、处理中和待复核任务。'
+    },
     insightMetrics() {
       const active = this.breakdownCount(this.insight.statuses, 'PENDING_ACCEPT') +
         this.breakdownCount(this.insight.statuses, 'PROCESSING') +
@@ -802,9 +816,10 @@ export default {
       return item.operatorName || item.operatorUserId || '系统'
     },
     async loadOptions() {
+      const canCreate = this.can('task:create')
       const [grids, workers] = await Promise.allSettled([
-        listGrids({ page: 1, size: 100 }),
-        listWorkerOptions()
+        canCreate ? listGrids({ page: 1, size: 100 }) : Promise.resolve([]),
+        canCreate ? listWorkerOptions() : Promise.resolve([])
       ])
       if (grids.status === 'fulfilled') {
         this.gridOptions = asItems(grids.value).map(item => ({

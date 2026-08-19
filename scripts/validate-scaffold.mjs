@@ -136,7 +136,9 @@ const passwordMigrationPath = "backend/src/main/resources/db/migration/V8__passw
 const passwordMigration = requireFile(passwordMigrationPath);
 const gridWorkerNavigationMigrationPath = "backend/src/main/resources/db/migration/V9__grid_worker_navigation_scope.sql";
 const gridWorkerNavigationMigration = requireFile(gridWorkerNavigationMigrationPath);
-const migrationChain = `${migration}\n${registrationMigration}\n${privacyMigration}\n${accessMigration}\n${sensitiveAuditMigration}\n${governanceMigration}\n${passwordMigration}\n${gridWorkerNavigationMigration}`;
+const roleWorkbenchMigrationPath = "backend/src/main/resources/db/migration/V10__role_workbenches.sql";
+const roleWorkbenchMigration = requireFile(roleWorkbenchMigrationPath);
+const migrationChain = `${migration}\n${registrationMigration}\n${privacyMigration}\n${accessMigration}\n${sensitiveAuditMigration}\n${governanceMigration}\n${passwordMigration}\n${gridWorkerNavigationMigration}\n${roleWorkbenchMigration}`;
 const pom = requireFile("backend/pom.xml");
 const applicationYaml = requireFile("backend/src/main/resources/application.yml");
 const packageText = requireFile("frontend/package.json");
@@ -154,6 +156,7 @@ const seedDemo = requireFile("scripts/seed-demo.mjs");
 const thesisScreenshots = requireFile("scripts/thesis-screenshots.py");
 const thesisFigures = requireFile("scripts/generate-thesis-figures.sh");
 const validationSafetyContract = requireFile("scripts/tests/validation-safety-contract.mjs");
+const roleWorkbenchMatrixText = requireFile("scripts/role-workbench-matrix.json");
 const frontendMain = requireFile("frontend/src/main.js");
 const thesisChapter = requireFile("docs/thesis/chapter-system-implementation-and-testing.md");
 requireFile("frontend/.eslintrc.js");
@@ -205,6 +208,7 @@ const navigationUtils = requireFile("frontend/src/utils/navigation.js");
 const eventAttachmentServiceTest = requireFile("backend/src/test/java/com/cunzhi/governance/attachment/service/EventAttachmentServiceTest.java");
 const attachmentPurgeServiceTest = requireFile("backend/src/test/java/com/cunzhi/governance/attachment/service/AttachmentPurgeServiceTest.java");
 const taskAttachmentServiceTest = requireFile("backend/src/test/java/com/cunzhi/governance/task/service/TaskAttachmentServiceTest.java");
+const taskActionRequest = requireFile("backend/src/main/java/com/cunzhi/governance/task/dto/TaskActionRequest.java");
 
 for (const [source, label] of [
   [readme, "README"],
@@ -221,6 +225,13 @@ try {
   packageJson = JSON.parse(packageText);
 } catch (error) {
   errors.push(`frontend/package.json 不是合法 JSON：${error.message}`);
+}
+
+let roleWorkbenchMatrix = null;
+try {
+  roleWorkbenchMatrix = JSON.parse(roleWorkbenchMatrixText);
+} catch (error) {
+  errors.push(`scripts/role-workbench-matrix.json 不是合法 JSON：${error.message}`);
 }
 
 assert(pom.includes("<version>4.1.0</version>"), "后端未固定 Spring Boot 4.1.0");
@@ -285,17 +296,26 @@ assert(
   roleNavigationSmoke.startsWith("#!/usr/bin/env node") &&
     roleNavigationSmoke.includes("ROLE_SMOKE_CONFIRM_ISOLATED") &&
     roleNavigationSmoke.includes("ROLE NAVIGATION PASS") &&
-    roleNavigationSmoke.includes("['DASHBOARD', 'EVENT', 'TASK']") &&
-    roleNavigationSmoke.includes("['RESIDENT_PORTAL']"),
-  "四角色导航回归脚本缺少隔离护栏或固定矩阵断言"
+    roleNavigationSmoke.includes("role-workbench-matrix.json") &&
+    roleNavigationSmoke.includes("assertStatsPayload") &&
+    roleNavigationSmoke.includes("forbiddenRoles") &&
+    roleNavigationSmoke.includes("permissionProbes") &&
+    !roleNavigationSmoke.includes("ownerProbe") &&
+    !roleNavigationSmoke.includes("writeProbes"),
+  "四角色导航回归脚本缺少隔离护栏、角色矩阵、统计或越权断言"
 );
 assert(
   roleNavigationUiE2e.startsWith("#!/usr/bin/env -S uv run --script") &&
     roleNavigationUiE2e.includes("ROLE_UI_CONFIRM_ISOLATED") &&
     roleNavigationUiE2e.includes("ROLE NAVIGATION UI PASS") &&
+    roleNavigationUiE2e.includes("role-workbench-matrix.json") &&
     roleNavigationUiE2e.includes("navigation leaked after logout") &&
-    roleNavigationUiE2e.includes('"治理概览", "治理事件", "网格任务"'),
-  "四角色真实浏览器导航回归缺少隔离、固定矩阵或缓存清理断言"
+    roleNavigationUiE2e.includes("bad_api_responses") &&
+    roleNavigationUiE2e.includes("visible_write_check") &&
+    roleNavigationUiE2e.includes("writeAffordances") &&
+    !roleNavigationUiE2e.includes("browser_write_probe") &&
+    !roleNavigationUiE2e.includes("owner write probe"),
+  "四角色真实浏览器导航回归缺少隔离、矩阵、写操作或错误清理断言"
 );
 assert(runtimeSmoke.includes("事件附件上传与内容校验"), "Node API 闭环脚本缺少附件上传验证");
 assert(runtimeSmoke.includes("固定核心角色权限配置"), "Node API 闭环脚本缺少角色权限配置验证");
@@ -385,8 +405,11 @@ assert(
 assert(
   validationPipeline.includes("runtime-smoke.mjs") &&
     validationPipeline.includes("ui-e2e.py") &&
+    validationPipeline.includes("role-navigation-smoke.mjs") &&
+    validationPipeline.includes("role-navigation-ui-e2e.py") &&
+    validationPipeline.includes("p1-lifecycle-smoke.mjs") &&
     validationPipeline.includes("PIPELINE PASS"),
-  "隔离验证流水线未串联 API、浏览器与成功终态"
+  "隔离验证流水线未串联 API、角色 API/UI、P1 浏览器与成功终态"
 );
 assert(
   validationPipeline.includes('wait_for_service "前端" "http://127.0.0.1:${frontend_port}/"'),
@@ -407,13 +430,17 @@ assert(
 assert(
   validationPipeline.includes("DROP USER IF EXISTS") &&
     validationPipeline.includes("REVOKE ALL PRIVILEGES, GRANT OPTION") &&
+    validationPipeline.includes("SHOW DATABASES LIKE") &&
+    validationPipeline.includes("mysql.user WHERE user") &&
+    validationPipeline.includes("process still alive") &&
     validationPipeline.includes("sensitive_artifact_matches=0") &&
     validationPipeline.includes('["tesseract", str(path), "stdout", "--psm", "6"]'),
   "隔离验证流水线缺少临时用户清理、迁移撤权或敏感产物扫描"
 );
 assert(
-  validationPipeline.includes("ATTACHMENT_STORAGE_ROOT") &&
-    validationPipeline.includes('find "${attachment_dir}" -depth -delete'),
+    validationPipeline.includes("ATTACHMENT_STORAGE_ROOT") &&
+    validationPipeline.includes('find "${attachment_dir}" -depth -delete') &&
+    validationPipeline.includes("删除后复核失败"),
   "隔离验证流水线缺少隔离附件目录或退出清理"
 );
 assert(
@@ -514,6 +541,24 @@ for (const action of [
   "派发员创建独立任务",
   "网格员提交独立任务复核",
   "引导管理员复核独立任务",
+  "社区公告创建",
+  "社区公告发布",
+  "居民可见社区公告",
+  "社区公告撤回并对居民隐藏",
+  "社区公告流转顺序",
+  "居民读取可申请服务目录",
+  "居民服务申请提交",
+  "居民服务申请幂等令牌重试",
+  "社区受理服务申请",
+  "社区开始处理服务申请",
+  "社区办结服务申请",
+  "居民服务申请评分",
+  "服务申请流转顺序",
+  "创建巡查计划并原子生成任务",
+  "巡查任务接单",
+  "巡查任务提交复核",
+  "非派发管理员复核巡查任务",
+  "巡查任务流转顺序",
 ]) {
   assert(runtimeSmoke.includes(action), `Node API 闭环脚本缺少动作：${action}`);
 }
@@ -523,6 +568,10 @@ const tables = tableMatches.map((match) => match[1]);
 assert(tables.length === 15, `Flyway V1 应包含 15 张表，实际为 ${tables.length}`);
 const effectiveBusinessTables = [...tables, "resident_sensitive_access_log", "task_attachment"];
 assert(effectiveBusinessTables.length === 17, `迁移链应形成 17 张业务表，实际为 ${effectiveBusinessTables.length}`);
+const migrationBusinessTables = [...new Set(
+  [...migrationChain.matchAll(/create\s+table\s+([a-z0-9_]+)/gi)].map((match) => match[1])
+)];
+assert(migrationBusinessTables.length === 23, `V1—V10 迁移链应形成 23 张业务表，实际为 ${migrationBusinessTables.length}`);
 assert(new Set(tables).size === tables.length, "Flyway V1 存在重复表名");
 assert(!/create\s+table\s+if\s+not\s+exists/i.test(migration), "Flyway V1 不应静默跳过已存在的表");
 assert(!/on\s+duplicate\s+key/i.test(migration), "Flyway V1 种子不应静默覆盖冲突");
@@ -669,6 +718,18 @@ const expectedPermissions = [
   "event:category:manage",
   "resident:sensitive:audit:read",
 ];
+const roleWorkbenchPermissions = new Set(
+  Object.values(roleWorkbenchMatrix?.roles || {}).flatMap((role) => [
+    role.statsApi?.permission,
+    ...(role.navigation || []).map((entry) => entry.permission),
+    ...(role.writeGroups || []).flatMap((group) => (group.operations || []).map((operation) => operation.permission)),
+  ]).filter(Boolean)
+);
+const frozenPermissions = new Set([
+  ...expectedPermissions,
+  ...(roleWorkbenchMatrix?.permissions || []),
+  ...roleWorkbenchPermissions,
+]);
 for (const permission of expectedPermissions) {
   assert(migrationChain.includes(`'${permission}'`), `Flyway 权限种子缺少：${permission}`);
   assert(apiContract.includes(permission), `API 契约缺少权限：${permission}`);
@@ -712,7 +773,7 @@ assert(
   "后端未配置 SPA CSRF"
 );
 assert(securityConfig.includes('"DELETE"'), "CORS 必须开放已使用的 DELETE 方法");
-assert(!/\.taskVersion\(\)/.test(backendJava), "TaskActionRequest 不存在 taskVersion accessor");
+assert(!/\.taskVersion\(\)/.test(taskActionRequest), "TaskActionRequest 不存在 taskVersion accessor");
 assert(
   authService.includes("userAuthMapper.updateLastLoginAt") &&
     userAuthMapper.includes("last_login_at = current_timestamp(3)"),
@@ -837,7 +898,7 @@ for (const sourceFile of backendJavaFiles) {
 
 const permissionAnnotations = [...backendJava.matchAll(/hasPermission\('([^']+)'\)/g)].map((match) => match[1]);
 for (const permission of permissionAnnotations) {
-  assert(expectedPermissions.includes(permission), `后端注解使用未冻结权限：${permission}`);
+  assert(frozenPermissions.has(permission), `后端注解使用未冻结权限：${permission}`);
 }
 const permissionCodesFile = backendJavaFiles.find((file) => path.basename(file) === "PermissionCodes.java");
 assert(Boolean(permissionCodesFile), "后端缺少 PermissionCodes");
@@ -845,6 +906,9 @@ if (permissionCodesFile) {
   const source = fs.readFileSync(permissionCodesFile, "utf8");
   for (const permission of expectedPermissions) {
     assert(source.includes(`"${permission}"`), `PermissionCodes 缺少：${permission}`);
+  }
+  for (const permission of roleWorkbenchPermissions) {
+    assert(source.includes(`"${permission}"`), `PermissionCodes 缺少角色工作台权限：${permission}`);
   }
 }
 
@@ -929,7 +993,8 @@ assert(
     navigationUtils.includes("navigation.items.find") &&
     navigationUtils.includes("return first ? first.routePath : '/forbidden'") &&
     navigationUtils.includes("navigation.status === 'error'") &&
-    navigationUtils.includes("return registered.length ? registered[0].path : '/forbidden'") &&
+    (navigationUtils.includes("return registered.length ? registered[0].path : '/forbidden'") ||
+      navigationUtils.includes("if (navigation.status === 'error') return '/forbidden'")) &&
     !frontendSource.includes("router.addRoutes"),
   "根路由跳转或服务端导航白名单渲染不完整"
 );
@@ -976,6 +1041,7 @@ assert(sqlRelativePaths.includes(privacyMigrationPath), "Flyway 迁移链缺少 
 assert(sqlRelativePaths.includes(accessMigrationPath), "Flyway 迁移链缺少 V5 权限与会话迁移");
 assert(sqlRelativePaths.includes(sensitiveAuditMigrationPath), "Flyway 迁移链缺少 V6 居民敏感字段访问审计迁移");
 assert(sqlRelativePaths.includes(governanceMigrationPath), "Flyway 迁移链缺少 V7 治理附件、导航与审计迁移");
+assert(sqlRelativePaths.includes(roleWorkbenchMigrationPath), "Flyway 迁移链缺少 V10 角色工作台迁移");
 assert(
   sqlRelativePaths.every((file) => file.startsWith(flywayPrefix)),
   `SQL 必须全部位于 Flyway 迁移目录，实际为：${sqlRelativePaths.join(", ")}`
@@ -990,6 +1056,101 @@ assert(
   migrationVersions.every(Number.isInteger) && new Set(migrationVersions).size === migrationVersions.length,
   `Flyway 版本必须为不重复整数：${sqlRelativePaths.join(", ")}`
 );
+
+function apiFragments(apiPath) {
+  return String(apiPath || "")
+    .split("/")
+    .filter(Boolean)
+    .filter((part) => !/^\{[^}]+\}$/.test(part))
+    .filter((part) => part !== "api");
+}
+
+function sourceHasApi(source, apiPath) {
+  const fragments = apiFragments(apiPath);
+  return fragments.length > 0 && fragments.every((fragment) => source.includes(fragment));
+}
+
+function sourceHasRoute(source, routePath) {
+  const normalized = String(routePath || "").replace(/^\/+/, "");
+  const leaf = normalized.split("/").pop();
+  return source.includes(routePath) ||
+    source.includes(`path: '${normalized}'`) ||
+    source.includes(`path: "${normalized}"`) ||
+    source.includes(`path: '${leaf}'`) ||
+    source.includes(`path: "${leaf}"`);
+}
+
+const roleWorkbenchRoles = roleWorkbenchMatrix?.roles || {};
+const roleWorkbenchRoleCodes = roleWorkbenchMatrix?.requiredRoles || [];
+const roleWorkbenchSchemaSource = `${migrationChain}\n${backendJava}`.toLowerCase();
+const roleWorkbenchStatsFields = roleWorkbenchMatrix?.statsFields || [];
+const roleWorkbenchRuntimeTables = new Set(["flyway_schema_history"]);
+assert(roleWorkbenchMatrix?.contractVersion === 1, "角色工作台合同缺少 contractVersion=1");
+assert(roleWorkbenchRoleCodes.length === 4, "角色工作台合同必须精确包含四个角色");
+assert(
+  roleWorkbenchMatrix?.minimumNavigationEntries >= 6,
+  "角色工作台合同的入口最低数量必须至少为 6"
+);
+for (const roleCode of roleWorkbenchRoleCodes) {
+  const role = roleWorkbenchRoles[roleCode];
+  const navigation = role?.navigation || [];
+  const expectedCount = roleWorkbenchMatrix?.exactNavigationCounts?.[roleCode];
+  assert(Boolean(role), `角色工作台合同缺少角色：${roleCode}`);
+  assert(navigation.length >= (roleWorkbenchMatrix?.minimumNavigationEntries || 6), `${roleCode} 导航入口少于 6 个`);
+  assert(navigation.length === expectedCount, `${roleCode} 导航入口数量应为 ${expectedCount}，实际为 ${navigation.length}`);
+  assert(new Set(navigation.map((item) => item.code)).size === navigation.length, `${roleCode} 导航编码重复`);
+  assert(new Set(navigation.map((item) => item.routePath)).size === navigation.length, `${roleCode} 导航路由重复`);
+  assert((role?.writeGroups || []).length >= 2, `${roleCode} 主责写操作组少于 2 组`);
+  assert((role?.stateTransitions || []).length >= 2, `${roleCode} 状态流转合同少于 2 条`);
+  for (const transition of role?.stateTransitions || []) {
+    assert(/^([A-Z_]+|NONE)->([A-Z_]+)$/.test(transition), `${roleCode} 状态流转格式非法：${transition}`);
+  }
+  assert(role?.statsApi?.path, `${roleCode} 缺少角色统计 API`);
+  for (const field of roleWorkbenchStatsFields) {
+    assert(backendJava.includes(field), `${roleCode} 统计后端缺少字段：${field}`);
+    assert(frontendSource.includes(field), `${roleCode} 统计前端缺少字段：${field}`);
+  }
+  assert(sourceHasApi(backendJava, role.statsApi?.path), `${roleCode} 统计后端 API 缺失：${role.statsApi?.path}`);
+  assert(sourceHasApi(frontendSource, role.statsApi?.path), `${roleCode} 统计前端 API 缺失：${role.statsApi?.path}`);
+  assert(frozenPermissions.has(role.statsApi?.permission), `${roleCode} 统计权限未冻结：${role.statsApi?.permission}`);
+  assert(migrationChain.includes(`'${role.statsApi?.permission}'`), `${roleCode} 统计权限未种入迁移`);
+  for (const entry of navigation) {
+    assert(entry.code && entry.routePath && entry.permission && entry.readApi, `${roleCode} 存在不完整导航合同项`);
+    assert(sourceHasRoute(frontendRouter, entry.routePath), `${roleCode}/${entry.code} 前端路由缺失：${entry.routePath}`);
+    assert(migrationChain.includes(`'${entry.code}'`), `${roleCode}/${entry.code} 未种入 sys_menu`);
+    assert(migrationChain.includes(`'${entry.routePath}'`), `${roleCode}/${entry.code} 迁移路由与前端合同不一致：${entry.routePath}`);
+    assert(migrationChain.includes(`'${entry.permission}'`), `${roleCode}/${entry.code} 菜单权限未种入迁移`);
+    assert(sourceHasApi(frontendSource, entry.readApi), `${roleCode}/${entry.code} 前端读取 API 缺失：${entry.readApi}`);
+    assert(sourceHasApi(backendJava, entry.readApi), `${roleCode}/${entry.code} 后端读取 API 缺失：${entry.readApi}`);
+    for (const table of entry.dbTables || []) {
+      assert(roleWorkbenchRuntimeTables.has(table) || roleWorkbenchSchemaSource.includes(table.toLowerCase()), `${roleCode}/${entry.code} DB 表缺失：${table}`);
+    }
+    for (const state of entry.states || []) {
+      assert(roleWorkbenchSchemaSource.includes(`'${state.toLowerCase()}'`) || roleWorkbenchSchemaSource.includes(state.toLowerCase()), `${roleCode}/${entry.code} 状态缺失：${state}`);
+    }
+  }
+  for (const group of role.writeGroups || []) {
+    assert(group.id && Array.isArray(group.operations) && group.operations.length >= 2, `${roleCode} 写操作组结构不完整：${group.id || "unknown"}`);
+    for (const operation of group.operations || []) {
+      assert(operation.id && operation.method && operation.path && operation.permission, `${roleCode} 写操作合同结构不完整`);
+      assert(operation.probeable === false || Object.hasOwn(operation, "probeBody"), `${roleCode}/${operation.id} 缺少合法权限探针请求体`);
+      assert(sourceHasApi(frontendSource, operation.path), `${roleCode}/${operation.id} 前端写 API 缺失：${operation.path}`);
+      assert(sourceHasApi(backendJava, operation.path), `${roleCode}/${operation.id} 后端写 API 缺失：${operation.path}`);
+      assert(frozenPermissions.has(operation.permission), `${roleCode}/${operation.id} 写权限未冻结：${operation.permission}`);
+      assert(migrationChain.includes(`'${operation.permission}'`), `${roleCode}/${operation.id} 写权限未种入迁移`);
+      for (const table of operation.tables || []) {
+        assert(roleWorkbenchRuntimeTables.has(table) || roleWorkbenchSchemaSource.includes(table.toLowerCase()), `${roleCode}/${operation.id} DB 表缺失：${table}`);
+      }
+      for (const state of operation.states || []) {
+        assert(roleWorkbenchSchemaSource.includes(`'${state.toLowerCase()}'`) || roleWorkbenchSchemaSource.includes(state.toLowerCase()), `${roleCode}/${operation.id} 状态缺失：${state}`);
+      }
+      for (const forbiddenRole of operation.forbiddenRoles || []) {
+        assert(roleWorkbenchRoleCodes.includes(forbiddenRole), `${roleCode}/${operation.id} 越权角色未在合同登记：${forbiddenRole}`);
+        assert(forbiddenRole !== roleCode, `${roleCode}/${operation.id} 不能把自身列为越权角色`);
+      }
+    }
+  }
+}
 
 for (const markdown of [
   "README.md",
@@ -1024,11 +1185,13 @@ console.log(
       backendJavaFiles: backendJavaFiles.length,
       backendTestFiles: backendTestFiles.length,
       frontendSourceFiles: frontendFiles.length,
-      tables: effectiveBusinessTables.length,
+      tables: migrationBusinessTables.length,
       migrations: sqlRelativePaths.length,
       foreignKeys: foreignKeys.length,
       namedConstraintsAndIndexes: namedDatabaseObjects.length,
-      permissions: expectedPermissions.length,
+      permissions: frozenPermissions.size,
+      legacyPermissions: expectedPermissions.length,
+      roleWorkbenchContractPermissions: roleWorkbenchPermissions.size,
       elementUiTemplateTags: elementUiContract.usedTags.size,
       elementUiRegistrationContract: "positive-and-negative-self-test-pass",
       apiSmokeScript: true,
@@ -1038,6 +1201,14 @@ console.log(
       demoDataScript: true,
       thesisScreenshotScript: true,
       thesisFigurePipeline: true,
+      roleWorkbenchMatrix: {
+        contractVersion: roleWorkbenchMatrix?.contractVersion || null,
+        navigationCounts: Object.fromEntries(
+          roleWorkbenchRoleCodes.map((roleCode) => [roleCode, roleWorkbenchRoles[roleCode]?.navigation?.length || 0])
+        ),
+        minimumNavigationEntries: roleWorkbenchMatrix?.minimumNavigationEntries || null,
+        statsFields: roleWorkbenchStatsFields,
+      },
       validationMode: "static-only",
     },
     null,

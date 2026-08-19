@@ -152,7 +152,7 @@ def run_suite(page: Page, base_url: str, username: str, password: str, output_di
         page.get_by_role("button", name="进入工作台").click()
     if not login_info.value.ok:
         raise AssertionError(f"Login failed with HTTP {login_info.value.status}")
-    page.wait_for_url(f"{base_url}/dashboard")
+    page.wait_for_url(f"{base_url}/admin/home")
     page.wait_for_load_state("networkidle")
 
     counts = validate_demo_counts(page)

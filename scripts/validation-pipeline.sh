@@ -213,11 +213,23 @@ cleanup() {
 
   stop_process "${frontend_pid}"
   stop_process "${backend_pid}"
+  if [[ -n "${frontend_pid}" ]] && kill -0 "${frontend_pid}" 2>/dev/null; then
+    printf '[pipeline] cleanup failed: frontend process still alive: %s\n' "${frontend_pid}" >&2
+    exit_status=1
+  fi
+  if [[ -n "${backend_pid}" ]] && kill -0 "${backend_pid}" 2>/dev/null; then
+    printf '[pipeline] cleanup failed: backend process still alive: %s\n' "${backend_pid}" >&2
+    exit_status=1
+  fi
 
   if [[ -e "${attachment_dir}" || -L "${attachment_dir}" ]]; then
     if [[ "${attachment_dir}" == "${artifact_dir}/attachments" && "${artifact_dir}" == "${artifact_root%/}/"* ]]; then
       if find "${attachment_dir}" -depth -delete >/dev/null 2>&1; then
         attachment_disposition="已删除：${attachment_dir}"
+        if [[ -e "${attachment_dir}" || -L "${attachment_dir}" ]]; then
+          attachment_disposition="删除后复核失败：${attachment_dir}"
+          exit_status=1
+        fi
       else
         attachment_disposition="删除失败：${attachment_dir}"
         exit_status=1
@@ -235,6 +247,10 @@ cleanup() {
     elif [[ "${database_name}" =~ ^community_governance_ci_[0-9_]+$ ]]; then
       if mysql_exec --execute="DROP DATABASE \`${database_name}\`;" >/dev/null; then
         database_disposition="已删除：${database_name}"
+        if [[ -n "$(mysql_exec --execute="SHOW DATABASES LIKE '${database_name}';")" ]]; then
+          database_disposition="删除后复核失败：${database_name}"
+          exit_status=1
+        fi
       else
         database_disposition="删除失败：${database_name}"
         exit_status=1
@@ -249,6 +265,10 @@ cleanup() {
     if [[ "${migration_username}" =~ ^cgm_[0-9_]+$ ]] &&
       mysql_exec --execute="DROP USER IF EXISTS '${migration_username}'@'%';" >/dev/null; then
       migration_user_disposition="已删除：${migration_username}"
+      if [[ "$(mysql_exec --execute="SELECT COUNT(*) FROM mysql.user WHERE user = '${migration_username}';")" != "0" ]]; then
+        migration_user_disposition="删除后复核失败：${migration_username}"
+        exit_status=1
+      fi
     else
       migration_user_disposition="删除失败或安全校验拒绝：${migration_username}"
       exit_status=1
@@ -258,6 +278,10 @@ cleanup() {
     if [[ "${runtime_username}" =~ ^cga_[0-9_]+$ ]] &&
       mysql_exec --execute="DROP USER IF EXISTS '${runtime_username}'@'%';" >/dev/null; then
       runtime_user_disposition="已删除：${runtime_username}"
+      if [[ "$(mysql_exec --execute="SELECT COUNT(*) FROM mysql.user WHERE user = '${runtime_username}';")" != "0" ]]; then
+        runtime_user_disposition="删除后复核失败：${runtime_username}"
+        exit_status=1
+      fi
     else
       runtime_user_disposition="删除失败或安全校验拒绝：${runtime_username}"
       exit_status=1
@@ -327,8 +351,14 @@ validate_port "PIPELINE_FRONTEND_PORT" "${frontend_port}"
 bootstrap_username="pipeline-admin-${database_stamp}-$$"
 bootstrap_password="$(openssl rand -base64 36 | tr -d '\r\n')Aa1!"
 worker_password="$(openssl rand -base64 36 | tr -d '\r\n')Aa1!"
+community_username="pipeline-community-${database_stamp}-$$"
+community_password="$(openssl rand -base64 36 | tr -d '\r\n')Aa1!"
 resident_username="pipeline-resident-${database_stamp}-$$"
 resident_password="$(openssl rand -base64 36 | tr -d '\r\n')Aa1!"
+unscoped_worker_username="pipeline-standby-${database_stamp}-$$"
+community_name="pipeline-community-area-${database_stamp}-$$"
+grid_name="pipeline-grid-area-${database_stamp}-$$"
+resident_name="pipeline-resident-record-${database_stamp}-$$"
 data_encryption_key="$(openssl rand -base64 32 | tr -d '\r\n')"
 migration_username="cgm_${database_stamp}_$$"
 runtime_username="cga_${database_stamp}_$$"
@@ -444,7 +474,14 @@ step "执行四类角色多账号 API 业务闭环"
   export SMOKE_ADMIN_USERNAME="${bootstrap_username}"
   export SMOKE_ADMIN_PASSWORD="${bootstrap_password}"
   export SMOKE_WORKER_USERNAME="pipeline-worker"
+  export SMOKE_WORKER_FIXED_USERNAME="pipeline-worker"
   export SMOKE_WORKER_PASSWORD="${worker_password}"
+  export SMOKE_COMMUNITY_USERNAME="${community_username}"
+  export SMOKE_COMMUNITY_PASSWORD="${community_password}"
+  export SMOKE_UNSCOPED_WORKER_USERNAME="${unscoped_worker_username}"
+  export SMOKE_COMMUNITY_NAME="${community_name}"
+  export SMOKE_GRID_NAME="${grid_name}"
+  export SMOKE_RESIDENT_NAME="${resident_name}"
   export SMOKE_RESIDENT_USERNAME="${resident_username}"
   export SMOKE_RESIDENT_PASSWORD="${resident_password}"
   export SMOKE_EVENT_CATEGORY_ID=1
@@ -453,6 +490,22 @@ step "执行四类角色多账号 API 业务闭环"
   export SMOKE_SYNTHETIC_PHONE="${synthetic_phone}"
   exec "${node_bin}" "${project_root}/scripts/runtime-smoke.mjs"
 ) 2>&1 | tee "${artifact_dir}/api-smoke.log"
+
+step "执行角色工作台 API 矩阵"
+(
+  unset PIPELINE_DB_ADMIN_USERNAME PIPELINE_DB_ADMIN_PASSWORD
+  export ROLE_SMOKE_BASE_URL="http://127.0.0.1:${backend_port}"
+  export ROLE_SMOKE_CONFIRM_ISOLATED=YES
+  export ROLE_SMOKE_ADMIN_USERNAME="${bootstrap_username}"
+  export ROLE_SMOKE_ADMIN_PASSWORD="${bootstrap_password}"
+  export ROLE_SMOKE_COMMUNITY_USERNAME="${community_username}"
+  export ROLE_SMOKE_COMMUNITY_PASSWORD="${community_password}"
+  export ROLE_SMOKE_GRID_USERNAME="pipeline-worker"
+  export ROLE_SMOKE_GRID_PASSWORD="${worker_password}"
+  export ROLE_SMOKE_RESIDENT_USERNAME="${resident_username}"
+  export ROLE_SMOKE_RESIDENT_PASSWORD="${resident_password}"
+  exec "${node_bin}" "${project_root}/scripts/role-navigation-smoke.mjs"
+) 2>&1 | tee "${artifact_dir}/role-navigation-api.log"
 
 step "启动本轮前端"
 (
@@ -465,6 +518,25 @@ step "启动本轮前端"
 ) >"${frontend_log}" 2>&1 &
 frontend_pid=$!
 wait_for_service "前端" "http://127.0.0.1:${frontend_port}/" "${frontend_pid}" "${frontend_log}"
+
+step "执行四角色工作台真实浏览器回归"
+(
+  unset PIPELINE_DB_ADMIN_USERNAME PIPELINE_DB_ADMIN_PASSWORD
+  export ROLE_UI_BASE_URL="http://127.0.0.1:${frontend_port}"
+  export ROLE_UI_CONFIRM_ISOLATED=YES
+  export ROLE_UI_ADMIN_USERNAME="${bootstrap_username}"
+  export ROLE_UI_ADMIN_PASSWORD="${bootstrap_password}"
+  export ROLE_UI_COMMUNITY_USERNAME="${community_username}"
+  export ROLE_UI_COMMUNITY_PASSWORD="${community_password}"
+  export ROLE_UI_GRID_USERNAME="pipeline-worker"
+  export ROLE_UI_GRID_PASSWORD="${worker_password}"
+  export ROLE_UI_RESIDENT_USERNAME="${resident_username}"
+  export ROLE_UI_RESIDENT_PASSWORD="${resident_password}"
+  if [[ -n "${PIPELINE_BROWSER_EXECUTABLE:-}" ]]; then
+    export ROLE_UI_BROWSER_EXECUTABLE="${PIPELINE_BROWSER_EXECUTABLE}"
+  fi
+  exec "${uv_bin}" run --script "${project_root}/scripts/role-navigation-ui-e2e.py"
+) 2>&1 | tee "${artifact_dir}/role-navigation-ui.log"
 
 step "执行真实浏览器 E2E"
 (
@@ -566,6 +638,20 @@ rejected_resident_binding="$(mysql_exec --database="${database_name}" --execute=
   SELECT COUNT(*) FROM resident
   WHERE id = ${rejected_resident_fixture_id} AND user_id IS NULL;")"
 [[ "${rejected_resident_binding}" == "1" ]] || fail "被驳回居民申请错误绑定了居民档案"
+
+step "执行 P1 生命周期回归"
+(
+  unset PIPELINE_DB_ADMIN_USERNAME PIPELINE_DB_ADMIN_PASSWORD
+  export SMOKE_BASE_URL="http://127.0.0.1:${backend_port}"
+  export SMOKE_CONFIRM_ISOLATED=YES
+  export SMOKE_ADMIN_USERNAME="${bootstrap_username}"
+  export SMOKE_ADMIN_PASSWORD="${bootstrap_password}"
+  export SMOKE_P1_RESIDENT_USERNAME="${resident_username}"
+  export SMOKE_P1_RESIDENT_NAME="${resident_name}"
+  export SMOKE_P1_STANDBY_USERNAME="${unscoped_worker_username}"
+  export SMOKE_P1_GRID_NAME="${grid_name}"
+  exec "${node_bin}" "${project_root}/scripts/p1-lifecycle-smoke.mjs"
+) 2>&1 | tee "${artifact_dir}/p1-lifecycle.log"
 
 step "核验居民敏感字段访问审计"
 sensitive_search_audit_count="$(mysql_exec --database="${database_name}" --execute="SELECT COUNT(*) FROM resident_sensitive_access_log WHERE action = 'SEARCH' AND purpose IS NULL;")"

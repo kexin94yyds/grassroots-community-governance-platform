@@ -277,6 +277,9 @@ public class SystemUserService {
         if (systemUserMapper.countOpenAssignedTasks(userId) > 0) {
             throw new BusinessException(ErrorCode.CONFLICT, "用户仍有未终止任务，不能停用");
         }
+        if (systemUserMapper.countOpenHandledServiceApplications(userId) > 0) {
+            throw new BusinessException(ErrorCode.CONFLICT, "用户仍有未完成服务申请，不能停用");
+        }
     }
 
     private String normalizePhone(String phone) {

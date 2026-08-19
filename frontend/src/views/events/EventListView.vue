@@ -2,13 +2,13 @@
   <section>
     <ResourceListView
       ref="resource"
-      title="治理事件"
-      description="查询事件上报、受理、派发、处置和复核进度。"
+      :title="pageTitle"
+      :description="pageDescription"
       :fetcher="listEvents"
       :columns="columns"
       :status-options="statuses"
       search-placeholder="事件编号、标题或地点"
-      manage-permission="event:report"
+      :manage-permission="routeMode === 'history' ? '' : 'event:report'"
       action-label="上报事件"
       :action-column-width="340"
       :view-options="viewOptions"
@@ -461,6 +461,20 @@ export default {
     }
   },
   computed: {
+    routeMode() {
+      if (this.$route.name === 'grid-event-report') return 'report'
+      if (this.$route.name === 'grid-history') return 'history'
+      return 'all'
+    },
+    pageTitle() {
+      return { report: '责任网格事件上报', history: '事件历史' }[this.routeMode] || '治理事件'
+    },
+    pageDescription() {
+      return {
+        report: '记录责任网格内发现的问题，提交后进入社区工作人员受理队列。',
+        history: '查看本人责任范围内事件的上报、处置和办结留痕。'
+      }[this.routeMode] || '查询事件上报、受理、派发、处置和复核进度。'
+    },
     insightMetrics() {
       const closed = this.breakdownCount(this.insight.statuses, 'CLOSED')
       const rejected = this.breakdownCount(this.insight.statuses, 'REJECTED')
@@ -663,10 +677,11 @@ export default {
       return manager || (item && item.uploadedBy != null && String(item.uploadedBy) === this.currentUserId)
     },
     async loadOptions() {
+      const canAssign = this.can('event:assign')
       const [categories, grids, workers] = await Promise.allSettled([
         listEventCategories(),
         listGrids({ page: 1, size: 100 }),
-        listWorkerOptions()
+        canAssign ? listWorkerOptions() : Promise.resolve([])
       ])
       if (categories.status === 'fulfilled') {
         this.categoryOptions = asItems(categories.value).map(item => ({

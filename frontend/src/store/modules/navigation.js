@@ -32,8 +32,8 @@ export default {
         commit('SET_NAVIGATION', items)
         return items
       } catch (error) {
-        // Only a failed request permits the layout to use its static fallback.
-        // An empty successful result is an authoritative, intentionally empty menu.
+        // A failed authorization response is intentionally fail-closed.
+        commit('CLEAR_NAVIGATION')
         commit('SET_STATUS', 'error')
         throw error
       }

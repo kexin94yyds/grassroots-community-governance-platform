@@ -2,6 +2,7 @@ package com.cunzhi.governance.task.service;
 
 import com.cunzhi.governance.attachment.service.AttachmentFileStore;
 import com.cunzhi.governance.attachment.service.AttachmentPurgeService;
+import com.cunzhi.governance.auth.model.AuthenticatedUser;
 import com.cunzhi.governance.common.error.BusinessException;
 import com.cunzhi.governance.common.error.ErrorCode;
 import com.cunzhi.governance.common.id.IdParser;
@@ -49,7 +50,7 @@ public class TaskAttachmentService {
     public List<TaskAttachmentView> findByTaskId(String taskIdValue) {
         long taskId = IdParser.parse(taskIdValue, "任务ID");
         TaskMapper.TaskRow task = requireTask(taskId);
-        dataScopeService.requireGridAccess(task.gridId());
+        requireTaskReadAccess(task);
         return attachmentMapper.findByTaskId(taskId).stream().map(this::toView).toList();
     }
 
@@ -103,7 +104,7 @@ public class TaskAttachmentService {
         long taskId = IdParser.parse(taskIdValue, "任务ID");
         long attachmentId = IdParser.parse(attachmentIdValue, "附件ID");
         TaskMapper.TaskRow task = requireTask(taskId);
-        dataScopeService.requireGridAccess(task.gridId());
+        requireTaskReadAccess(task);
         TaskAttachmentMapper.AttachmentRow row = requireAttachment(attachmentId);
         if (!row.taskId().equals(taskId)) {
             throw new BusinessException(ErrorCode.NOT_FOUND, "附件不属于该任务");
@@ -157,6 +158,17 @@ public class TaskAttachmentService {
             throw new BusinessException(ErrorCode.NOT_FOUND, "附件不存在");
         }
         return row;
+    }
+
+    private void requireTaskReadAccess(TaskMapper.TaskRow task) {
+        dataScopeService.requireGridAccess(task.gridId());
+        AuthenticatedUser user = dataScopeService.currentUser();
+        boolean elevated = user.roles().contains(RoleCodes.SYSTEM_ADMIN)
+                || user.roles().contains(RoleCodes.COMMUNITY_STAFF);
+        if (!elevated && user.roles().contains(RoleCodes.GRID_WORKER)
+                && !task.assigneeUserId().equals(user.id())) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "网格员只能查看本人任务附件");
+        }
     }
 
     private boolean isAttachmentManager() {
