@@ -7,6 +7,8 @@ import com.cunzhi.governance.common.id.BusinessNumberGenerator;
 import com.cunzhi.governance.event.mapper.EventFlowMapper;
 import com.cunzhi.governance.event.mapper.EventMapper;
 import com.cunzhi.governance.system.mapper.DataScopeMapper;
+import com.cunzhi.governance.system.security.DataScope;
+import com.cunzhi.governance.system.security.DataScopeType;
 import com.cunzhi.governance.system.service.DataScopeService;
 import com.cunzhi.governance.task.dto.TaskCreateRequest;
 import com.cunzhi.governance.task.dto.TaskActionRequest;
@@ -99,6 +101,7 @@ class TaskServiceTest {
     void returnsFlowIdsAsStringsAfterScopeCheck() {
         LocalDateTime createdAt = LocalDateTime.now();
         when(taskMapper.findById(42)).thenReturn(Optional.of(taskRow(42)));
+        when(dataScopeService.currentUser()).thenReturn(user(5));
         when(taskFlowMapper.findByTaskId(42)).thenReturn(List.of(
                 new TaskFlowMapper.TaskFlowRow(
                         8L, 42L, "ASSIGN", null, "PENDING_ACCEPT",
@@ -114,6 +117,35 @@ class TaskServiceTest {
             assertThat(flow.operatorUserId()).isEqualTo("5");
         });
         verify(dataScopeService).requireGridAccess(7);
+    }
+
+    @Test
+    void gridWorkerCannotReadAnotherAssigneesTaskDetailsOrFlows() {
+        when(taskMapper.findById(42)).thenReturn(Optional.of(taskRow(42)));
+        when(dataScopeService.currentUser()).thenReturn(gridWorker(99));
+
+        assertThatThrownBy(() -> service().findById("42"))
+                .isInstanceOfSatisfying(BusinessException.class, exception ->
+                        assertThat(exception.errorCode()).isEqualTo(ErrorCode.FORBIDDEN));
+        assertThatThrownBy(() -> service().findFlows("42"))
+                .isInstanceOfSatisfying(BusinessException.class, exception ->
+                        assertThat(exception.errorCode()).isEqualTo(ErrorCode.FORBIDDEN));
+
+        verify(taskFlowMapper, never()).findByTaskId(42L);
+    }
+
+    @Test
+    void gridWorkerPageUsesCurrentUserAsAssigneeFilter() {
+        when(dataScopeService.currentScope()).thenReturn(new DataScope(DataScopeType.GRID, Set.of(7L)));
+        when(dataScopeService.currentUser()).thenReturn(gridWorker(12));
+        when(taskMapper.findPage(null, null, false, List.of(7L), 12L, 0, 20)).thenReturn(List.of());
+        when(taskMapper.count(null, null, false, List.of(7L), 12L)).thenReturn(0L);
+
+        var page = service().findPage(null, null, 1, 20);
+
+        assertThat(page.items()).isEmpty();
+        verify(taskMapper).findPage(null, null, false, List.of(7L), 12L, 0, 20);
+        verify(taskMapper).count(null, null, false, List.of(7L), 12L);
     }
 
     @Test
@@ -226,6 +258,13 @@ class TaskServiceTest {
         return new AuthenticatedUser(
                 id, "staff", "", "社区工作人员", true,
                 Set.of("COMMUNITY_STAFF"), Set.of("task:create")
+        );
+    }
+
+    private AuthenticatedUser gridWorker(long id) {
+        return new AuthenticatedUser(
+                id, "worker", "", "网格员", true,
+                Set.of("GRID_WORKER"), Set.of("task:read", "task:accept", "task:handle")
         );
     }
 

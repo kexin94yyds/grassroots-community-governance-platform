@@ -215,6 +215,21 @@ xsrfHeaderName = X-XSRF-TOKEN
 
 `onTimeCompletionRate` 与 `percentage` 均为 `0..100` 的数值百分比，`1` 表示 `1%`，不是 `0.01` 比例小数；没有相应分母时返回 `0`。网格按期办结率的分母仅为有 `due_at` 且已完成的事件派生任务，分子为其中 `completed_at <= due_at` 的任务；未完成的逾期任务和无期限任务不进入该口径。`recentEvents` 按 `reportedAt`、`id` 倒序，最多 10 条。
 
+### 4.2 四角色工作台、公告、服务与巡查
+
+| 模块 | 方法与路径 | 权限与边界 |
+|---|---|---|
+| 角色首页 | `GET /api/workbenches/{admin|community|grid|resident}/summary` | 对应 `workbench:*:read`；网格员按本人任务/巡查，居民按本人资源 |
+| 公告 | `GET /api/announcements` | `announcement:read`；普通角色只见已发布且范围可见公告 |
+| 公告维护 | `POST /api/announcements`、`PUT /{id}`、`POST /{id}/publish|withdraw` | 管理员全局写或社区人员所属社区写，携带 `version` |
+| 服务目录 | `GET /api/service-catalogs`、`GET/POST/PUT /api/system/service-catalogs` | 四角色读取启用目录，管理员维护全部目录 |
+| 社区服务处理 | `GET /api/service-applications`、`POST /{id}/accept|start|complete|reject` | 管理员只读全局；社区人员按网格范围处理 |
+| 居民服务 | `GET/POST /api/resident-portal/service-applications`、`POST /{id}/cancel|rate` | 只允许居民本人；提交可带 UUID `requestToken` |
+| 巡查计划 | `GET/POST /api/patrol-plans`、`GET /mine`、`POST /{id}/cancel` | 社区人员创建/取消，网格员只读本人；执行复用任务接口 |
+| 管理运行 | `GET /api/system/operations`、`GET /api/system/health` | 仅管理员；审计结果不返回敏感查询值 |
+
+工作台统一返回 `{ role, scopeLabel, metrics, focusItems, recentItems }`。公告、服务申请和巡查更新均使用乐观锁；状态动作必须同时新增对应 flow，不能以通用更新覆盖历史。
+
 ## 5. 角色、权限与数据范围
 
 数据库角色码固定为：
@@ -257,16 +272,34 @@ file:delete
 dashboard:read
 event:category:manage
 resident:sensitive:audit:read
+workbench:admin:read
+workbench:community:read
+workbench:grid:read
+workbench:resident:read
+announcement:read
+announcement:global:write
+announcement:community:write
+service:catalog:read
+service:catalog:manage
+service:application:read
+service:application:handle
+service:application:apply
+service:application:cancel
+service:application:rate
+patrol:read
+patrol:plan:write
+system:audit:read
+system:health:read
 ```
 
-角色码、菜单码、路由和权限码是固定核心模型，不提供新增或改码接口。管理员只能维护角色名称、描述、状态和现有菜单关系，以及菜单名称、图标、排序和状态。系统管理员必须保留用户、角色、菜单管理权限，且不能获得任务接单、任务处置或居民服务台权限；居民角色只能保留居民服务台权限；社区工作人员和网格员也不能越过各自固定职责边界。系统管理员角色和用户/角色/菜单管理、居民服务台等核心入口不能停用，仍有启用账号的非管理员角色也不能直接停用。
+角色码、菜单码、路由和权限码是固定核心模型，不提供新增或改码接口。管理员只能维护角色名称、描述、状态和现有菜单关系，以及菜单名称、图标、排序和状态。系统管理员必须保留用户、角色、菜单管理权限，且不能获得任务接单、任务处置或居民本人权限；居民角色只能保留本人服务中心白名单；社区工作人员和网格员也不能越过各自固定职责边界。
 
 `SYSTEM_ADMIN` 负责系统管理和全局查看，但不能默认接单或处置任务。服务端统一推导数据范围：
 
 - 系统管理员：全部区域数据。
 - 社区工作人员：已分配的一个或多个社区及其子网格；每个社区的有效分配中必须且只能有一名主负责人，只有系统管理员可以维护该关系。
 - 网格员：已分配责任网格；处理任务时还必须是任务执行人。
-- 居民用户：仅本人绑定居民档案所属网格；只能调用居民服务台并查询本人上报事件。
+- 居民用户：仅本人绑定档案、本人事件/附件、本人服务申请/评价及所属社区可见公告。
 
 网格员分配规则与社区一致，但候选人必须为启用的 `GRID_WORKER`；社区候选人必须为启用的 `COMMUNITY_STAFF`。前端权限只用于隐藏无关入口，不能替代后端方法权限和数据范围校验。
 
@@ -300,6 +333,6 @@ resident:sensitive:audit:read
 - Controller 不直接注入 Mapper。
 - 工作流入口使用事务，非法状态跳转不能退化为通用更新。
 - 代码中不得出现 `csrf.disable()`、`SessionCreationPolicy.STATELESS` 或带凭据的通配 CORS。
-- Java 状态枚举必须与 Flyway V1 中的 `CHECK` 集合一致；用户角色软失效逻辑必须与 Flyway V2 的生命周期约束一致；注册审核与居民唯一绑定必须与 Flyway V3 约束一致；角色、菜单乐观锁与会话安全版本必须与 Flyway V5 一致；居民敏感访问审计必须与 Flyway V6 一致；类别版本、附件软删除、上传令牌幂等、任务附件、动态菜单权限和审计范围网格必须与 Flyway V7 一致；强制改密状态必须与 Flyway V8 一致；网格员导航与底层范围只读权限分离必须与 Flyway V9 一致。
+- Java 状态枚举必须与 Flyway CHECK 集合一致；V1—V9 的角色、注册、隐私、会话、审计、附件、改密和导航合同保持不变；公告、服务申请、评分、巡查计划、工作台菜单与新增权限必须与 Flyway V10 一致。
 - 除 `backend/src/main/resources/db/migration` 外不维护第二份建表 SQL。
 - 所有详情、状态动作、附件和大屏查询都预留服务端数据范围入口。

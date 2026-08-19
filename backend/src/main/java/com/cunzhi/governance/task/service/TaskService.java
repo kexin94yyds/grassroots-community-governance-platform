@@ -12,6 +12,8 @@ import com.cunzhi.governance.event.mapper.EventMapper;
 import com.cunzhi.governance.system.mapper.DataScopeMapper;
 import com.cunzhi.governance.system.security.DataScope;
 import com.cunzhi.governance.system.security.DataScopeType;
+import com.cunzhi.governance.system.security.PermissionCodes;
+import com.cunzhi.governance.system.security.RoleCodes;
 import com.cunzhi.governance.system.service.DataScopeService;
 import com.cunzhi.governance.task.domain.TaskStatus;
 import com.cunzhi.governance.task.dto.TaskActionRequest;
@@ -62,7 +64,7 @@ public class TaskService {
 
     public TaskSummary findById(String id) {
         TaskMapper.TaskRow row = requireTask(IdParser.parse(id, "任务ID"));
-        dataScopeService.requireGridAccess(row.gridId());
+        requireTaskReadAccess(row);
         return toSummary(row);
     }
 
@@ -72,14 +74,15 @@ public class TaskService {
         List<Long> gridIds = new ArrayList<>(scope.gridIds());
         String normalizedKeyword = normalizeText(keyword);
         String normalizedStatus = normalizeStatus(status);
+        Long assigneeUserId = currentReadAssigneeUserId();
 
         List<TaskSummary> items = taskMapper.findPage(
                         normalizedKeyword, normalizedStatus, allAccess, gridIds,
-                        (page - 1) * size, size
+                        assigneeUserId, (page - 1) * size, size
                 ).stream()
                 .map(this::toSummary)
                 .toList();
-        long total = taskMapper.count(normalizedKeyword, normalizedStatus, allAccess, gridIds);
+        long total = taskMapper.count(normalizedKeyword, normalizedStatus, allAccess, gridIds, assigneeUserId);
         return new PageResponse<>(items, total, page, size);
     }
 
@@ -112,7 +115,7 @@ public class TaskService {
     public List<TaskFlowView> findFlows(String id) {
         long taskId = IdParser.parse(id, "任务ID");
         TaskMapper.TaskRow task = requireTask(taskId);
-        dataScopeService.requireGridAccess(task.gridId());
+        requireTaskReadAccess(task);
         return taskFlowMapper.findByTaskId(taskId).stream()
                 .map(row -> new TaskFlowView(
                         row.id().toString(),
@@ -170,6 +173,10 @@ public class TaskService {
                     "事件派生任务不能单独取消，请通过事件工作流处理"
             );
         }
+        if (taskMapper.countPatrolTaskById(taskId) > 0
+                && !dataScopeService.currentUser().permissions().contains(PermissionCodes.PATROL_PLAN_WRITE)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "巡查计划只能由社区工作人员通过计划入口取消");
+        }
         String reason = normalizeText(request.reason());
         if (reason == null) {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR, "取消任务必须填写原因");
@@ -183,6 +190,7 @@ public class TaskService {
                 taskId, "CANCEL", from.name(), TaskStatus.CANCELLED.name(),
                 dataScopeService.currentUser().id(), reason
         );
+        taskMapper.cancelPatrolPlanByTaskId(taskId);
         return toSummary(requireTask(taskId));
     }
 
@@ -254,6 +262,9 @@ public class TaskService {
                 taskId, action, from.name(), target.name(), operator.id(),
                 reviewRemark == null ? request.remark() : reviewRemark
         );
+        if (target == TaskStatus.COMPLETED) {
+            taskMapper.completePatrolPlanByTaskId(taskId);
+        }
         return toSummary(requireTask(taskId));
     }
 
@@ -304,6 +315,21 @@ public class TaskService {
     private TaskMapper.TaskRow requireTaskForUpdate(long id) {
         return taskMapper.findByIdForUpdate(id)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "任务不存在"));
+    }
+
+    private void requireTaskReadAccess(TaskMapper.TaskRow task) {
+        dataScopeService.requireGridAccess(task.gridId());
+        Long assigneeUserId = currentReadAssigneeUserId();
+        if (assigneeUserId != null && !task.assigneeUserId().equals(assigneeUserId)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "网格员只能查看本人任务");
+        }
+    }
+
+    private Long currentReadAssigneeUserId() {
+        AuthenticatedUser user = dataScopeService.currentUser();
+        boolean elevated = user.roles().contains(RoleCodes.SYSTEM_ADMIN)
+                || user.roles().contains(RoleCodes.COMMUNITY_STAFF);
+        return !elevated && user.roles().contains(RoleCodes.GRID_WORKER) ? user.id() : null;
     }
 
     private void ensureUpdated(int updated) {

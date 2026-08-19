@@ -38,7 +38,9 @@ import { errorMessage } from '../../utils/data'
 
 const GRID_WORKER_PERMISSIONS = new Set([
   'dashboard:read', 'grid:read', 'resident:read', 'event:read', 'event:report',
-  'task:read', 'task:accept', 'task:handle', 'file:read', 'file:upload'
+  'task:read', 'task:accept', 'task:handle', 'file:read', 'file:upload',
+  'file:delete', 'workbench:grid:read', 'patrol:read', 'announcement:read',
+  'service:application:read'
 ])
 
 export default {
@@ -125,10 +127,27 @@ export default {
         return !['task:accept', 'task:handle', 'resident:portal'].includes(permission)
       }
       if (roleCode === 'COMMUNITY_STAFF') {
-        return !permission.startsWith('system:') && !['task:accept', 'task:handle', 'resident:portal'].includes(permission)
+        return !permission.startsWith('system:') && ![
+          'task:accept',
+          'task:handle',
+          'resident:portal',
+          'service:catalog:manage',
+          'system:audit:read',
+          'system:health:read',
+          'announcement:global:write'
+        ].includes(permission)
       }
       if (roleCode === 'GRID_WORKER') return GRID_WORKER_PERMISSIONS.has(permission)
-      return roleCode === 'RESIDENT' && permission === 'resident:portal'
+      return roleCode === 'RESIDENT' && [
+        'resident:portal',
+        'workbench:resident:read',
+        'announcement:read',
+        'service:catalog:read',
+        'service:application:read',
+        'service:application:apply',
+        'service:application:cancel',
+        'service:application:rate'
+      ].includes(permission)
     },
     async openEdit(row) {
       await this.ensureMenus()

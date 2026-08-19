@@ -30,6 +30,24 @@ public final class PermissionCodes {
     public static final String FILE_UPLOAD = "file:upload";
     public static final String FILE_DELETE = "file:delete";
     public static final String DASHBOARD_READ = "dashboard:read";
+    public static final String WORKBENCH_ADMIN_READ = "workbench:admin:read";
+    public static final String WORKBENCH_COMMUNITY_READ = "workbench:community:read";
+    public static final String WORKBENCH_GRID_READ = "workbench:grid:read";
+    public static final String WORKBENCH_RESIDENT_READ = "workbench:resident:read";
+    public static final String ANNOUNCEMENT_READ = "announcement:read";
+    public static final String ANNOUNCEMENT_GLOBAL_WRITE = "announcement:global:write";
+    public static final String ANNOUNCEMENT_COMMUNITY_WRITE = "announcement:community:write";
+    public static final String SERVICE_CATALOG_READ = "service:catalog:read";
+    public static final String SERVICE_CATALOG_MANAGE = "service:catalog:manage";
+    public static final String SERVICE_APPLICATION_READ = "service:application:read";
+    public static final String SERVICE_APPLICATION_HANDLE = "service:application:handle";
+    public static final String SERVICE_APPLICATION_APPLY = "service:application:apply";
+    public static final String SERVICE_APPLICATION_CANCEL = "service:application:cancel";
+    public static final String SERVICE_APPLICATION_RATE = "service:application:rate";
+    public static final String PATROL_READ = "patrol:read";
+    public static final String PATROL_PLAN_WRITE = "patrol:plan:write";
+    public static final String SYSTEM_AUDIT_READ = "system:audit:read";
+    public static final String SYSTEM_HEALTH_READ = "system:health:read";
 
     private PermissionCodes() {
     }

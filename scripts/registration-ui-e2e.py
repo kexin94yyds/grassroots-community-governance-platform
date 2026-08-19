@@ -209,7 +209,7 @@ def login_admin(page: Page, base_url: str, username: str, password: str) -> None
     ) as login_info:
         page.get_by_role("button", name="进入工作台").click()
     check(login_info.value.ok, f"Administrator login failed with HTTP {login_info.value.status}")
-    page.wait_for_url(f"{base_url}/dashboard")
+    page.wait_for_url(f"{base_url}/admin/home")
 
 
 def register_via_ui(browser: Any, guards: list[Any], base_url: str, account: dict[str, str]) -> None:
@@ -516,7 +516,7 @@ def main() -> int:
         )
 
         progress("proving approved home pages and rejected login denial")
-        attempt_login(browser, guards, base_url, staff_approved, "/dashboard")
+        attempt_login(browser, guards, base_url, staff_approved, "/community/home")
         attempt_login(browser, guards, base_url, resident_approved, "/resident/home")
         attempt_login(browser, guards, base_url, staff_rejected, None)
         attempt_login(browser, guards, base_url, resident_rejected, None)
@@ -529,7 +529,7 @@ def main() -> int:
             "pendingLoginDenied": 4,
             "reviewRequests": len(review_requests),
             "duplicateReviewRequests": 0,
-            "approvedHomes": ["/dashboard", "/resident/home"],
+            "approvedHomes": ["/community/home", "/resident/home"],
             "staffApprovedUserId": staff_approved_result["id"],
             "staffRejectedUserId": staff_rejected_result["id"],
             "residentApprovedUserId": resident_approved_result["id"],

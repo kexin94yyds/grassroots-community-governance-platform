@@ -27,6 +27,10 @@ const apiBase = parsedBase.pathname.replace(/\/+$/, '').endsWith('/api')
   : `${baseUrl.replace(/\/+$/, '')}/api`
 const adminUsername = required('SMOKE_ADMIN_USERNAME')
 const adminPassword = required('SMOKE_ADMIN_PASSWORD', true)
+const residentUsername = process.env.SMOKE_P1_RESIDENT_USERNAME || 'resident-xingfu'
+const residentName = process.env.SMOKE_P1_RESIDENT_NAME || '张建国'
+const standbyUsername = process.env.SMOKE_P1_STANDBY_USERNAME || 'grid-standby-heyuan'
+const gridName = process.env.SMOKE_P1_GRID_NAME || '和苑第二网格'
 const temporaryPassword = `${randomBytes(24).toString('base64url')}Aa1!`
 const finalPassword = `${randomBytes(24).toString('base64url')}Bb2!`
 
@@ -109,15 +113,15 @@ async function main() {
   const admin = new Client('admin')
   await admin.login(adminUsername, adminPassword)
 
-  let residentUser = await findSingle(admin, '/system/users', 'resident-xingfu',
-    item => item.username === 'resident-xingfu')
+  let residentUser = await findSingle(admin, '/system/users', residentUsername,
+    item => item.username === residentUsername)
   await admin.request(`/system/users/${residentUser.id}/password-reset`, {
     method: 'POST',
     body: { temporaryPassword, version: residentUser.version }
   })
 
   const forced = new Client('forced-resident')
-  const forcedUser = await forced.login('resident-xingfu', temporaryPassword)
+  const forcedUser = await forced.login(residentUsername, temporaryPassword)
   assert.equal(forcedUser.passwordChangeRequired, true, 'Reset login must require password change')
   await forced.request('/dashboard/overview', {
     status: 403, code: 'PASSWORD_CHANGE_REQUIRED'
@@ -127,15 +131,15 @@ async function main() {
   })
 
   const stale = new Client('stale-password')
-  await stale.login('resident-xingfu', temporaryPassword, {
+  await stale.login(residentUsername, temporaryPassword, {
     status: 401, code: 'INVALID_CREDENTIALS'
   })
   const resident = new Client('resident')
-  const residentSession = await resident.login('resident-xingfu', finalPassword)
+  const residentSession = await resident.login(residentUsername, finalPassword)
   assert.equal(residentSession.passwordChangeRequired, false, 'Completed change must clear flag')
 
-  let residentRecord = await findSingle(admin, '/residents', '张建国',
-    item => item.realName === '张建国')
+  let residentRecord = await findSingle(admin, '/residents', residentName,
+    item => item.realName === residentName)
   residentRecord = await admin.request(`/residents/${residentRecord.id}/status`, {
     method: 'PATCH', body: { status: 'MOVED', version: residentRecord.version }
   })
@@ -143,21 +147,21 @@ async function main() {
   residentRecord = await admin.request(`/residents/${residentRecord.id}/status`, {
     method: 'PATCH', body: { status: 'ACTIVE', version: residentRecord.version }
   })
-  residentUser = await findSingle(admin, '/system/users', 'resident-xingfu',
-    item => item.username === 'resident-xingfu')
+  residentUser = await findSingle(admin, '/system/users', residentUsername,
+    item => item.username === residentUsername)
   assert.equal(residentUser.status, 'DISABLED', 'Restoring resident must not enable account')
   await admin.request(`/system/users/${residentUser.id}/status`, {
     method: 'PATCH', body: { enabled: true, version: residentUser.version }
   })
   const restored = new Client('restored-resident')
-  await restored.login('resident-xingfu', finalPassword)
+  await restored.login(residentUsername, finalPassword)
 
-  const standby = await findSingle(admin, '/system/users', 'grid-standby-heyuan',
-    item => item.username === 'grid-standby-heyuan')
+  const standby = await findSingle(admin, '/system/users', standbyUsername,
+    item => item.username === standbyUsername)
   const gridPage = await admin.request(query('/grids', {
-    keyword: '和苑第二网格', areaType: 'GRID', page: 1, size: 20
+    keyword: gridName, areaType: 'GRID', page: 1, size: 20
   }))
-  const gridSummary = gridPage.items.find(item => item.areaName === '和苑第二网格')
+  const gridSummary = gridPage.items.find(item => item.areaName === gridName)
   assert.ok(gridSummary, 'Missing heyuan grid')
   const before = await admin.request(`/grids/${gridSummary.id}`)
   await admin.request(`/grids/${before.id}/assignments`, {

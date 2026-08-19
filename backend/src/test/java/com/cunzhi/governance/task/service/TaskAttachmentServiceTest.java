@@ -75,6 +75,7 @@ class TaskAttachmentServiceTest {
     @Test
     void refusesToDownloadAttachmentAttachedToAnotherTask() {
         when(taskMapper.findById(42L)).thenReturn(Optional.of(task(42L, "PROCESSING", 12L)));
+        when(dataScopeService.currentUser()).thenReturn(user(12L));
         when(attachmentMapper.findById(9L)).thenReturn(new TaskAttachmentMapper.AttachmentRow(
                 9L, 43L, 7L, "00000000-0000-0000-0000-000000000009", "别的任务.jpg",
                 "image/jpeg", jpegBytes().length, "hash", null, 12L, "执行人", LocalDateTime.now()
@@ -85,6 +86,22 @@ class TaskAttachmentServiceTest {
                         assertThat(exception.errorCode()).isEqualTo(ErrorCode.NOT_FOUND));
 
         verify(dataScopeService).requireGridAccess(7L);
+    }
+
+    @Test
+    void gridWorkerCannotListOrDownloadCoworkerTaskAttachments() {
+        when(taskMapper.findById(42L)).thenReturn(Optional.of(task(42L, "PROCESSING", 12L)));
+        when(dataScopeService.currentUser()).thenReturn(user(13L));
+
+        assertThatThrownBy(() -> service().findByTaskId("42"))
+                .isInstanceOfSatisfying(BusinessException.class, exception ->
+                        assertThat(exception.errorCode()).isEqualTo(ErrorCode.FORBIDDEN));
+        assertThatThrownBy(() -> service().download("42", "9"))
+                .isInstanceOfSatisfying(BusinessException.class, exception ->
+                        assertThat(exception.errorCode()).isEqualTo(ErrorCode.FORBIDDEN));
+
+        verify(attachmentMapper, never()).findByTaskId(42L);
+        verify(attachmentMapper, never()).findById(9L);
     }
 
     @Test

@@ -215,6 +215,25 @@ public interface GridMapper {
     int countOpenTasks(@Param("gridId") long gridId);
 
     @Select("""
+            select count(*) from service_application
+            where grid_id = #{gridId} and status not in ('COMPLETED', 'REJECTED', 'CANCELLED')
+            """)
+    int countOpenServiceApplications(@Param("gridId") long gridId);
+
+    @Select("""
+            select count(*)
+            from service_application application
+            join grid_area grid on grid.id = application.grid_id
+            where application.handler_user_id = #{userId}
+              and grid.parent_id = #{communityId}
+              and application.status not in ('COMPLETED', 'REJECTED', 'CANCELLED')
+            """)
+    int countOpenHandledServiceApplications(
+            @Param("userId") long userId,
+            @Param("communityId") long communityId
+    );
+
+    @Select("""
             select assignment.user_id as userId, u.username, u.real_name as realName,
                    assignment.is_primary as primaryFlag
             from user_area_assignment assignment

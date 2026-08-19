@@ -22,6 +22,7 @@ import java.util.Set;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -98,6 +99,9 @@ class GridServiceTest {
 
         verify(gridMapper).endActiveAssignments(3, "COMMUNITY_STAFF");
         verify(gridMapper).insertAssignment(3, 21, "COMMUNITY_STAFF", true, 1);
+        var lockOrder = inOrder(gridMapper);
+        lockOrder.verify(gridMapper).lockArea(3L);
+        lockOrder.verify(gridMapper).findActiveAssignmentsForUpdate(3L, "COMMUNITY_STAFF");
     }
 
     @Test

@@ -166,6 +166,12 @@ a:hover {
   background: var(--canvas);
 }
 
+.role-shell--system_admin .brand-mark { background: #f2dfc4; }
+.role-shell--community_staff .brand-mark { background: #dcebe4; }
+.role-shell--grid_worker .brand-mark { background: #cfe2d9; }
+.role-shell--resident .brand-mark { color: #7c4615; background: #ffe5bd; }
+.role-shell--resident .app-menu .el-menu-item.is-active::before { background: #d4833e; }
+
 .app-sidebar {
   position: fixed;
   inset: 0 auto 0 0;

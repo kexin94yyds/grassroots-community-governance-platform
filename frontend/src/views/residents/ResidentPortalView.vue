@@ -1,8 +1,8 @@
 <template>
   <section class="resident-portal">
     <PageHeader
-      title="居民服务台"
-      description="查看本人社区档案，提交民生事项，并跟踪每一次回应。"
+      :title="pageTitle"
+      :description="pageDescription"
     />
 
     <el-alert v-if="error" class="state-alert" :title="error" type="error" show-icon :closable="false">
@@ -10,7 +10,7 @@
     </el-alert>
 
     <template v-else>
-      <article v-loading="loading" class="resident-identity">
+      <article v-if="routeMode === 'home' || routeMode === 'profile'" v-loading="loading" class="resident-identity">
         <div class="identity-seal" aria-hidden="true">民</div>
         <div class="identity-copy">
           <p>已核验居民档案</p>
@@ -26,7 +26,7 @@
       </article>
 
       <div class="resident-workspace">
-        <article class="resident-report-card">
+        <article v-if="routeMode === 'home' || routeMode === 'report'" class="resident-report-card">
           <header>
             <p>NEW REQUEST</p>
             <h2>上报一件民生事项</h2>
@@ -88,7 +88,7 @@
           </el-form>
         </article>
 
-        <article class="resident-history">
+        <article v-if="routeMode === 'home' || routeMode === 'events'" class="resident-history">
           <header>
             <div>
               <p>MY LEDGER</p>
@@ -118,6 +118,20 @@
           </ol>
         </article>
       </div>
+
+      <article v-if="routeMode === 'profile'" class="resident-profile-note">
+        <p class="panel-kicker">VERIFIED PROFILE</p>
+        <h2>本人档案信息</h2>
+        <p>以下信息来自已核验居民档案，后台工作人员看到的敏感字段仍按授权策略脱敏。</p>
+        <dl>
+          <div><dt>居民编号</dt><dd>{{ display(profile.residentNo) }}</dd></div>
+          <div><dt>所属网格</dt><dd>{{ display(profile.gridName) }}</dd></div>
+          <div><dt>家庭户编号</dt><dd>{{ display(profile.householdNo) }}</dd></div>
+          <div><dt>档案状态</dt><dd>{{ display(profile.statusLabel || profile.status) }}</dd></div>
+          <div><dt>联系电话</dt><dd>{{ display(profile.phoneMasked) }}</dd></div>
+          <div><dt>联系地址</dt><dd>{{ display(profile.address) }}</dd></div>
+        </dl>
+      </article>
     </template>
 
     <el-dialog
@@ -251,6 +265,23 @@ export default {
     }
   },
   computed: {
+    routeMode() {
+      return {
+        'resident-report': 'report',
+        'resident-events': 'events',
+        'resident-profile': 'profile'
+      }[this.$route.name] || 'home'
+    },
+    pageTitle() {
+      return { report: '居民事项上报', events: '我的事项', profile: '我的档案' }[this.routeMode] || '居民服务台'
+    },
+    pageDescription() {
+      return {
+        report: '向所属网格提交一件真实民生事项，附件会随事项保留。',
+        events: '查看本人上报事项的受理、派发、处置和办结进度。',
+        profile: '查看已核验的本人居民档案与所属网格信息。'
+      }[this.routeMode] || '查看本人社区档案，提交民生事项，并跟踪每一次回应。'
+    },
     reportUploadSummary() {
       return this.uploadSummary(this.reportUploadFiles, '点击“重试失败附件”可继续上传。')
     },
@@ -519,6 +550,14 @@ export default {
 .event-ledger small { display: block; margin-top: 10px; color: var(--muted-strong); }
 .ledger-actions { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; }
 .ledger-actions .el-button { flex: none; margin-top: 7px; }
+.resident-profile-note { margin-top: 22px; padding: 26px 28px; background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: var(--radius-surface); box-shadow: var(--shadow-soft); }
+.resident-profile-note h2 { margin: 0 0 8px; font-family: var(--font-display); font-size: 24px; }
+.resident-profile-note > p:not(.panel-kicker) { margin: 0 0 20px; color: var(--muted); line-height: 1.7; }
+.resident-profile-note dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 24px; margin: 0; }
+.resident-profile-note dl > div { display: grid; grid-template-columns: 100px minmax(0, 1fr); gap: 10px; padding: 12px 0; border-top: 1px solid var(--line); }
+.resident-profile-note dt { color: var(--muted); }
+.resident-profile-note dd { margin: 0; color: var(--ink); }
+@media (max-width: 560px) { .resident-profile-note { padding: 22px 18px; } .resident-profile-note dl { grid-template-columns: 1fr; } }
 @media (max-width: 560px) { .ledger-actions { align-items: flex-start; flex-direction: column; gap: 2px; } .ledger-actions .el-button { margin-top: 0; } }
 @media (max-width: 1080px) { .resident-workspace { grid-template-columns: 1fr; } }
 @media (max-width: 760px) { .resident-identity { grid-template-columns: 58px 1fr; padding: 22px 18px; } .identity-seal { width: 50px; height: 50px; font-size: 22px; } .resident-identity dl { grid-column: 1 / -1; grid-template-columns: 1fr; } .report-grid { grid-template-columns: 1fr; gap: 0; } .resident-report-card, .resident-history { padding: 22px 18px; } }

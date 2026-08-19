@@ -117,8 +117,9 @@ public class GridService {
             if ("GRID".equals(row.areaType())
                     && (gridMapper.countActiveResidents(areaId) > 0
                     || gridMapper.countOpenEvents(areaId) > 0
-                    || gridMapper.countOpenTasks(areaId) > 0)) {
-                throw new BusinessException(ErrorCode.CONFLICT, "网格仍有有效居民、未办结事件或进行中任务");
+                    || gridMapper.countOpenTasks(areaId) > 0
+                    || gridMapper.countOpenServiceApplications(areaId) > 0)) {
+                throw new BusinessException(ErrorCode.CONFLICT, "网格仍有有效居民、未办结事件、进行中任务或服务申请");
             }
         } else if ("GRID".equals(row.areaType())
                 && (row.communityId() == null || gridMapper.countEnabledCommunity(row.communityId()) != 1)) {
@@ -177,6 +178,17 @@ public class GridService {
                     .anyMatch(userId -> taskMapper.countUnfinishedByGridAndAssignee(areaId, userId) > 0);
             if (hasOrphanedTask) {
                 throw new BusinessException(ErrorCode.CONFLICT, "被移除网格员仍有未终止任务，不能撤销责任范围");
+            }
+        } else {
+            Set<Long> requestedUsers = assignments.stream()
+                    .map(ResolvedAssignment::userId)
+                    .collect(java.util.stream.Collectors.toSet());
+            boolean hasOrphanedService = currentAssignments.stream()
+                    .map(GridMapper.AssignmentRow::userId)
+                    .filter(userId -> !requestedUsers.contains(userId))
+                    .anyMatch(userId -> gridMapper.countOpenHandledServiceApplications(userId, areaId) > 0);
+            if (hasOrphanedService) {
+                throw new BusinessException(ErrorCode.CONFLICT, "被移除社区工作人员仍有未完成服务申请，不能撤销责任范围");
             }
         }
 

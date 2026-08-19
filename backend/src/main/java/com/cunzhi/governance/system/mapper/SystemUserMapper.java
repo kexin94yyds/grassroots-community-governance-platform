@@ -267,6 +267,13 @@ public interface SystemUserMapper {
     int countOpenAssignedTasks(@Param("userId") long userId);
 
     @Select("""
+            select count(*) from service_application
+            where handler_user_id = #{userId}
+              and status not in ('COMPLETED', 'REJECTED', 'CANCELLED')
+            """)
+    int countOpenHandledServiceApplications(@Param("userId") long userId);
+
+    @Select("""
             select role_code as code, role_name as name, description, status
             from sys_role
             order by role_code

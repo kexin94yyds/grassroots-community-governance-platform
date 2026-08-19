@@ -31,9 +31,12 @@ backend/src/main/resources/db/migration/V4__resident_registration_phone_privacy.
 backend/src/main/resources/db/migration/V5__access_control_and_session_freshness.sql
 backend/src/main/resources/db/migration/V6__resident_sensitive_access_audit.sql
 backend/src/main/resources/db/migration/V7__governance_attachment_navigation_and_audit.sql
+backend/src/main/resources/db/migration/V8__password_lifecycle.sql
+backend/src/main/resources/db/migration/V9__grid_worker_navigation_scope.sql
+backend/src/main/resources/db/migration/V10__role_workbenches.sql
 ```
 
-V1 包含 15 张业务表、三类后台角色、24 个权限项及其默认授权，但不包含任何用户密码；V2 为 `sys_user_role` 增加 `ACTIVE/ENDED` 状态、结束时间、索引与生命周期约束；V3 为账号增加申请类型、审核状态和居民档案候选绑定，并新增 `RESIDENT` 角色及 `resident:portal` 权限；V4 将历史居民注册申请可能遗留在 `sys_user.phone` 中的明文手机号清空；V5 为用户增加会话安全版本，并为角色、菜单增加乐观锁版本；V6 新增不保存明文或指纹的居民敏感字段访问审计表；V7 新增 `task_attachment`，补充事件附件软删除、`upload_token` 幂等和 `file_purged_at` 待清理标记、类别乐观锁、动态导航权限和审计范围网格；V8 增加强制改密状态和索引；V9 将网格员导航入口与底层范围只读权限分离。当前迁移链共 17 张业务表、4 个固定角色和 28 个业务权限码。迁移一旦被正式环境执行，就视为已发布；之后只新增更高版本，不回改 V1 至 V9。
+V1 包含 15 张业务表、三类后台角色和首批权限；V2—V9 依次补齐角色生命周期、居民注册、隐私、会话安全、敏感审计、附件、强制改密和导航/底层权限分离。V10 新增公告、服务目录与申请、巡查计划及其流转，形成 23 张业务表、4 个固定角色和 46 个业务权限码。迁移一旦被正式环境执行，就视为已发布；之后只新增更高版本，不回改 V1 至 V10。
 
 后端读取以下环境变量：
 
@@ -69,7 +72,7 @@ export DB_PASSWORD='<验证库账号密码>'
 export DATA_ENCRYPTION_KEY="$(openssl rand -base64 32)"
 ```
 
-后端首次启动后，使用只读查询核对 V1 至 V9 均成功且业务表数量符合预期：
+后端首次启动后，使用只读查询核对 V1 至 V10 均成功且业务表数量符合预期：
 
 ```bash
 mysql --host=localhost --port=3306 --user="$DB_USERNAME" --password community_governance_validation_20260731
@@ -94,12 +97,12 @@ where table_schema = 'community_governance_validation_20260731'
 
 | 项目 | 本轮必须核对的结果 |
 |---|---|
-| Flyway | V1 至 V9 均 `success=1`，当前版本为 9 |
-| 业务表 | `information_schema` 返回 17（不含 `flyway_schema_history`） |
-| 种子 | 4 个固定角色、28 个权限项；角色授权符合冻结权限矩阵 |
-| 后端 | JDK 17 的服务层测试与可执行 JAR 均成功 |
-| API 闭环 | 四类角色多账号路径全部 `PASS`，含动态导航、类别乐观锁、附件令牌幂等、归属/删除、敏感审计和大屏统计一致性 |
-| 浏览器 | 管理员与居民账号在桌面及 390px 移动端覆盖动态菜单、根路由、真实流转、概览、任务附件和居民附件；控制台、页面、请求及异常 API 响应为 0 |
+| Flyway | V1 至 V10 均 `success=1`，当前版本为 10 |
+| 业务表 | `information_schema` 返回 23（不含 `flyway_schema_history`） |
+| 种子 | 4 个固定角色、46 个权限码；动态导航精确为 14/11/7/7 |
+| 后端 | JDK 17 下 100 项测试与可执行 JAR 均成功 |
+| API 闭环 | 旧业务闭环、新四角色统计、16 个写权限探针及 P1 生命周期全部 `PASS` |
+| 浏览器 | 四角色 39 个入口、每角色 2 个写交互，以及管理员/居民综合 E2E 全部通过；控制台、页面、站内请求及异常 API 响应为 0 |
 
 V3 验收还应覆盖：工作人员注册保持 `PENDING/DISABLED`、居民身份三字段不匹配时不创建账号、管理员批准后角色与居民档案唯一绑定、居民账号只能访问 `/api/resident-portal/**` 授权数据。
 V4 验收还应覆盖：带连字符的居民手机号仍可匹配档案，且待审核居民账号的 `sys_user.phone` 为 `NULL`。附件验收应为本轮配置独立的 `ATTACHMENT_STORAGE_ROOT`，覆盖合法 JPEG/PNG/PDF、声明 MIME 与内容签名不一致被拒绝、授权列表/下载以及下载字节一致性。

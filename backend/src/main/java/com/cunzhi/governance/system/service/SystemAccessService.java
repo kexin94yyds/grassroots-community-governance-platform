@@ -42,13 +42,92 @@ public class SystemAccessService {
             PermissionCodes.TASK_HANDLE,
             PermissionCodes.FILE_READ,
             PermissionCodes.FILE_UPLOAD,
-            PermissionCodes.FILE_DELETE
+            PermissionCodes.FILE_DELETE,
+            PermissionCodes.WORKBENCH_GRID_READ,
+            PermissionCodes.ANNOUNCEMENT_READ,
+            PermissionCodes.PATROL_READ
     );
     private static final Set<String> REQUIRED_ADMIN_PERMISSIONS = Set.of(
             PermissionCodes.SYSTEM_USER_MANAGE,
             PermissionCodes.SYSTEM_ROLE_MANAGE,
             PermissionCodes.SYSTEM_MENU_MANAGE,
             PermissionCodes.EVENT_CATEGORY_MANAGE
+    );
+    private static final Set<String> ADMIN_ALLOWED_PERMISSIONS = Set.of(
+            PermissionCodes.DASHBOARD_READ,
+            PermissionCodes.SYSTEM_USER_MANAGE,
+            PermissionCodes.SYSTEM_ROLE_MANAGE,
+            PermissionCodes.SYSTEM_MENU_MANAGE,
+            PermissionCodes.GRID_READ,
+            PermissionCodes.GRID_WRITE,
+            PermissionCodes.GRID_ASSIGN,
+            PermissionCodes.RESIDENT_READ,
+            PermissionCodes.RESIDENT_WRITE,
+            PermissionCodes.RESIDENT_SENSITIVE_READ,
+            PermissionCodes.RESIDENT_SENSITIVE_AUDIT_READ,
+            PermissionCodes.EVENT_READ,
+            PermissionCodes.EVENT_REPORT,
+            PermissionCodes.EVENT_ACCEPT,
+            PermissionCodes.EVENT_REJECT,
+            PermissionCodes.EVENT_ASSIGN,
+            PermissionCodes.EVENT_CANCEL,
+            PermissionCodes.EVENT_CATEGORY_MANAGE,
+            PermissionCodes.TASK_READ,
+            PermissionCodes.TASK_CREATE,
+            PermissionCodes.TASK_REVIEW,
+            PermissionCodes.TASK_CANCEL,
+            PermissionCodes.FILE_READ,
+            PermissionCodes.FILE_UPLOAD,
+            PermissionCodes.FILE_DELETE,
+            PermissionCodes.WORKBENCH_ADMIN_READ,
+            PermissionCodes.ANNOUNCEMENT_READ,
+            PermissionCodes.ANNOUNCEMENT_GLOBAL_WRITE,
+            PermissionCodes.SERVICE_CATALOG_READ,
+            PermissionCodes.SERVICE_CATALOG_MANAGE,
+            PermissionCodes.SERVICE_APPLICATION_READ,
+            PermissionCodes.PATROL_READ,
+            PermissionCodes.SYSTEM_AUDIT_READ,
+            PermissionCodes.SYSTEM_HEALTH_READ
+    );
+    private static final Set<String> COMMUNITY_STAFF_PERMISSIONS = Set.of(
+            PermissionCodes.DASHBOARD_READ,
+            PermissionCodes.GRID_READ,
+            PermissionCodes.GRID_WRITE,
+            PermissionCodes.GRID_ASSIGN,
+            PermissionCodes.RESIDENT_READ,
+            PermissionCodes.RESIDENT_WRITE,
+            PermissionCodes.RESIDENT_SENSITIVE_READ,
+            PermissionCodes.RESIDENT_SENSITIVE_AUDIT_READ,
+            PermissionCodes.EVENT_READ,
+            PermissionCodes.EVENT_REPORT,
+            PermissionCodes.EVENT_ACCEPT,
+            PermissionCodes.EVENT_REJECT,
+            PermissionCodes.EVENT_ASSIGN,
+            PermissionCodes.EVENT_CANCEL,
+            PermissionCodes.TASK_READ,
+            PermissionCodes.TASK_CREATE,
+            PermissionCodes.TASK_REVIEW,
+            PermissionCodes.TASK_CANCEL,
+            PermissionCodes.FILE_READ,
+            PermissionCodes.FILE_UPLOAD,
+            PermissionCodes.FILE_DELETE,
+            PermissionCodes.WORKBENCH_COMMUNITY_READ,
+            PermissionCodes.ANNOUNCEMENT_READ,
+            PermissionCodes.ANNOUNCEMENT_COMMUNITY_WRITE,
+            PermissionCodes.SERVICE_CATALOG_READ,
+            PermissionCodes.SERVICE_APPLICATION_READ,
+            PermissionCodes.SERVICE_APPLICATION_HANDLE,
+            PermissionCodes.PATROL_READ,
+            PermissionCodes.PATROL_PLAN_WRITE
+    );
+    private static final Set<String> RESIDENT_PERMISSIONS = Set.of(
+            PermissionCodes.RESIDENT_PORTAL,
+            PermissionCodes.WORKBENCH_RESIDENT_READ,
+            PermissionCodes.ANNOUNCEMENT_READ,
+            PermissionCodes.SERVICE_CATALOG_READ,
+            PermissionCodes.SERVICE_APPLICATION_APPLY,
+            PermissionCodes.SERVICE_APPLICATION_CANCEL,
+            PermissionCodes.SERVICE_APPLICATION_RATE
     );
 
     private final SystemAccessMapper mapper;
@@ -150,6 +229,7 @@ public class SystemAccessService {
     private void requireCompatiblePermissions(String roleCode, Set<String> permissions) {
         if (RoleCodes.SYSTEM_ADMIN.equals(roleCode)) {
             if (!permissions.containsAll(REQUIRED_ADMIN_PERMISSIONS)
+                    || !ADMIN_ALLOWED_PERMISSIONS.containsAll(permissions)
                     || permissions.contains(PermissionCodes.TASK_ACCEPT)
                     || permissions.contains(PermissionCodes.TASK_HANDLE)
                     || permissions.contains(PermissionCodes.RESIDENT_PORTAL)) {
@@ -158,13 +238,7 @@ public class SystemAccessService {
             return;
         }
         if (RoleCodes.COMMUNITY_STAFF.equals(roleCode)) {
-            boolean incompatible = permissions.stream().anyMatch(permission ->
-                    permission.startsWith("system:")
-                            || PermissionCodes.EVENT_CATEGORY_MANAGE.equals(permission)
-                            || PermissionCodes.TASK_ACCEPT.equals(permission)
-                            || PermissionCodes.TASK_HANDLE.equals(permission)
-                            || PermissionCodes.RESIDENT_PORTAL.equals(permission));
-            if (incompatible) {
+            if (!COMMUNITY_STAFF_PERMISSIONS.containsAll(permissions)) {
                 throw new BusinessException(ErrorCode.VALIDATION_ERROR, "社区工作人员权限超出固定职责边界");
             }
             return;
@@ -173,7 +247,8 @@ public class SystemAccessService {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR, "网格员权限超出固定职责边界");
         }
         if (RoleCodes.RESIDENT.equals(roleCode)
-                && !permissions.equals(Set.of(PermissionCodes.RESIDENT_PORTAL))) {
+                && (!RESIDENT_PERMISSIONS.containsAll(permissions)
+                || !permissions.contains(PermissionCodes.RESIDENT_PORTAL))) {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR, "居民角色只能保留居民服务台权限");
         }
     }

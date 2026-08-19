@@ -1,5 +1,5 @@
 <template>
-  <el-container class="app-shell">
+  <el-container class="app-shell" :class="`role-shell--${primaryRole.toLowerCase()}`">
     <a class="skip-link" href="#main-content">跳到主要内容</a>
     <button
       v-if="mobileNavOpen"
@@ -15,11 +15,11 @@
       :class="{ 'is-open': mobileNavOpen }"
       width="232px"
     >
-      <router-link class="brand" :to="homePath" aria-label="返回首页">
-        <span class="brand-mark" aria-hidden="true">格</span>
+      <router-link class="brand" :to="homePath" :aria-label="`返回${brand.title}`">
+        <span class="brand-mark" aria-hidden="true">{{ brand.mark }}</span>
         <span>
-          <strong>网格治理</strong>
-          <small>社区责任工作簿</small>
+          <strong>{{ brand.title }}</strong>
+          <small>{{ brand.subtitle }}</small>
         </span>
       </router-link>
 
@@ -61,9 +61,9 @@
             <i class="el-icon-menu" />
           </button>
           <div>
-            <p class="header-context">基层社区网格化综合治理</p>
+            <p class="header-context">{{ brand.context }}</p>
             <p class="header-trail">
-              <span>治理工作台</span>
+              <span>{{ brand.workspace }}</span>
               <i aria-hidden="true">/</i>
               <strong>{{ $route.meta.title }}</strong>
             </p>
@@ -125,8 +125,20 @@ export default {
       return resolveHomePath(this.$router, this.$store)
     },
     roleLabel() {
-      const role = (this.user.roles || [])[0]
-      return ROLE_LABELS[role] || role || '已登录'
+      return ROLE_LABELS[this.primaryRole] || this.primaryRole || '已登录'
+    },
+    primaryRole() {
+      const roles = this.user.roles || []
+      return ['SYSTEM_ADMIN', 'COMMUNITY_STAFF', 'GRID_WORKER', 'RESIDENT'].find(role => roles.includes(role)) || roles[0] || 'AUTHENTICATED'
+    },
+    brand() {
+      const brands = {
+        SYSTEM_ADMIN: { mark: '管', title: '全局治理', subtitle: '系统管理工作簿', context: '基层社区网格化综合治理 · 全局视角', workspace: '管理驾驶舱' },
+        COMMUNITY_STAFF: { mark: '社', title: '社区治理', subtitle: '社区责任工作簿', context: '基层社区网格化综合治理 · 社区范围', workspace: '社区治理中心' },
+        GRID_WORKER: { mark: '巡', title: '网格现场', subtitle: '现场执行工作簿', context: '基层社区网格化综合治理 · 责任网格', workspace: '现场执行台' },
+        RESIDENT: { mark: '民', title: '居民服务', subtitle: '居民服务工作簿', context: '基层社区网格化综合治理 · 本人服务', workspace: '居民服务中心' }
+      }
+      return brands[this.primaryRole] || { mark: '格', title: '网格治理', subtitle: '社区责任工作簿', context: '基层社区网格化综合治理', workspace: '治理工作台' }
     },
     navigationItems() {
       return this.$store.state.navigation.items || []
@@ -163,9 +175,8 @@ export default {
           .sort((left, right) => left.meta.sortNo - right.meta.sortNo)
       }
 
-      // 接口成功但没有菜单时，空列表是服务端的权威结果；只有请求失败
-      // 才使用静态路由作为可用性兜底。
-      return this.navigationStatus === 'error' ? routeItems : []
+      // 导航请求失败时不显示静态菜单，避免仅凭本地权限推断可见入口。
+      return []
     }
   },
   watch: {
@@ -184,7 +195,10 @@ export default {
       try {
         await this.$store.dispatch('navigation/refresh')
       } catch (error) {
-        // Store status is already "error"; the computed menu applies the fallback.
+        // Store status is already "error"; the layout intentionally stays fail-closed.
+        if (this.$route.meta.nav && this.$route.path !== '/forbidden') {
+          this.$router.replace('/forbidden').catch(() => null)
+        }
       }
     },
     async handleCommand(command) {

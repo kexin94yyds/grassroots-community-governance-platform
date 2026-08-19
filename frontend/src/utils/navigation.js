@@ -17,11 +17,8 @@ export function resolveHomePath(router, store) {
     return first ? first.routePath : '/forbidden'
   }
 
-  // A failed navigation request uses the same permission-filtered static fallback
-  // as the layout. While loading, remain conservative instead of guessing a route.
-  if (navigation.status === 'error') {
-    return registered.length ? registered[0].path : '/forbidden'
-  }
+  // Navigation is an authorization response. If it cannot be verified, fail closed.
+  if (navigation.status === 'error') return '/forbidden'
   return '/forbidden'
 }
 
@@ -33,5 +30,5 @@ export function isUsableNavigationPath(router, store, target) {
   if (store.state.navigation.status === 'ready') {
     return store.state.navigation.items.some(item => item.routePath === resolvedPath)
   }
-  return store.state.navigation.status === 'error'
+  return false
 }

@@ -13,7 +13,11 @@ import org.springframework.context.annotation.Configuration;
         "com.cunzhi.governance.event.mapper",
         "com.cunzhi.governance.task.mapper",
         "com.cunzhi.governance.dashboard.mapper",
-        "com.cunzhi.governance.insight.mapper"
+        "com.cunzhi.governance.insight.mapper",
+        "com.cunzhi.governance.announcement.mapper",
+        "com.cunzhi.governance.serviceapplication.mapper",
+        "com.cunzhi.governance.patrol.mapper",
+        "com.cunzhi.governance.workbench.mapper"
 })
 public class MyBatisConfig {
 }
