@@ -5,6 +5,10 @@ export function getResidentOverview() {
   return http.get('/resident-portal/overview')
 }
 
+export function updateResidentProfile(data) {
+  return http.put('/resident-portal/profile', data)
+}
+
 export function reportResidentEvent(data) {
   return http.post('/resident-portal/events', data)
 }

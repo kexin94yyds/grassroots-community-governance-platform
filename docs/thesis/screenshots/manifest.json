@@ -1,0 +1,67 @@
+{
+  "generatedAt": "2026-07-31T14:58:27.981054+00:00",
+  "viewport": {
+    "desktop": {
+      "width": 1920,
+      "height": 1080
+    },
+    "mobile": {
+      "width": 390,
+      "height": 844
+    }
+  },
+  "demoCounts": {
+    "grids": 4,
+    "residents": 4,
+    "events": 16,
+    "tasks": 15
+  },
+  "runtime": {
+    "consoleErrors": 0,
+    "pageErrors": 0,
+    "failedRequests": 0,
+    "badApiResponses": 0
+  },
+  "figures": [
+    {
+      "file": "01-login.png",
+      "title": "系统登录界面",
+      "caption": "展示平台身份认证入口与系统定位。"
+    },
+    {
+      "file": "02-dashboard.png",
+      "title": "社区治理概览",
+      "caption": "展示网格、居民、重点人群及事件处置阶段统计。"
+    },
+    {
+      "file": "03-user-permissions.png",
+      "title": "用户与角色管理",
+      "caption": "展示系统管理员、社区工作人员和网格员账号。"
+    },
+    {
+      "file": "04-grid-responsibility-map.png",
+      "title": "网格空间地图",
+      "caption": "展示社区—网格—责任网格员的层级关系。"
+    },
+    {
+      "file": "05-resident-cards.png",
+      "title": "居民档案卡片",
+      "caption": "展示居民、家庭户、重点人群标签与所属网格。"
+    },
+    {
+      "file": "06-event-flow.png",
+      "title": "治理事件流程追踪",
+      "caption": "展示待受理、处理中、待复核和已办结等阶段。"
+    },
+    {
+      "file": "07-task-board.png",
+      "title": "网格任务执行看板",
+      "caption": "展示任务在接单、处置、复核和完成阶段的分布。"
+    },
+    {
+      "file": "08-mobile-events.png",
+      "title": "移动端治理事件",
+      "caption": "展示窄屏下概览折叠、筛选与事件卡片布局。"
+    }
+  ]
+}

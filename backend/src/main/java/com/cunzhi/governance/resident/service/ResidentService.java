@@ -7,6 +7,7 @@ import com.cunzhi.governance.common.id.IdParser;
 import com.cunzhi.governance.common.id.BusinessNumberGenerator;
 import com.cunzhi.governance.resident.dto.ResidentCreateRequest;
 import com.cunzhi.governance.resident.dto.ResidentSensitiveSearchRequest;
+import com.cunzhi.governance.resident.dto.ResidentPortalProfileUpdateRequest;
 import com.cunzhi.governance.resident.dto.ResidentSensitiveView;
 import com.cunzhi.governance.resident.dto.ResidentSensitiveAccessLogView;
 import com.cunzhi.governance.resident.dto.ResidentSensitiveViewRequest;
@@ -151,6 +152,19 @@ public class ResidentService {
         ResidentMapper.ResidentRow row = residentMapper.findByUserId(userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "当前账号未绑定居民档案"));
         return toSummary(row);
+    }
+
+    @Transactional
+    public ResidentSummary updateCurrentUserProfile(ResidentPortalProfileUpdateRequest request) {
+        long userId = dataScopeService.currentUser().id();
+        ResidentMapper.ResidentRow row = residentMapper.findByUserId(userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "当前账号未绑定有效居民档案"));
+        SensitiveDataCodec.Encoded phone = encodePhone(request.phone());
+        ensureUpdated(residentMapper.updateCurrentUserContact(
+                row.id(), ciphertext(phone), hash(phone), last4(phone),
+                request.address().trim(), request.version()
+        ));
+        return toSummary(requireResident(row.id()));
     }
 
     public PageResponse<ResidentSummary> findPage(

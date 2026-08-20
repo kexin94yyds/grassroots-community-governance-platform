@@ -1191,12 +1191,7 @@ async function main() {
   assert.deepEqual(
     [...residentMe.permissions].sort(),
     [
-      'announcement:read',
       'resident:portal',
-      'service:application:apply',
-      'service:application:cancel',
-      'service:application:rate',
-      'service:catalog:read',
       'workbench:resident:read'
     ].sort(),
     '居民权限必须收敛到本人服务中心能力'
@@ -1207,15 +1202,30 @@ async function main() {
     'RESIDENT_PORTAL',
     'RESIDENT_REPORT',
     'RESIDENT_EVENTS',
-    'RESIDENT_PROFILE',
-    'RESIDENT_SERVICE',
-    'RESIDENT_RATING',
-    'ANNOUNCEMENT'
-  ], '居民动态导航必须返回七个本人服务入口')
+    'RESIDENT_PROFILE'
+  ], '居民动态导航必须只返回开题报告范围内的四个本人入口')
   const residentOverview = await residentClient.request('/resident-portal/overview')
   assert.equal(residentOverview.profile.id, resident.id, '居民服务台未返回本人绑定档案')
   assert.ok(Array.isArray(residentOverview.categories) && residentOverview.categories.length > 0, '居民服务台缺少事件类别')
   assert.ok(Array.isArray(residentOverview.events), '居民服务台本人事件必须为数组')
+  const residentContactAddress = `${names.address}-本人维护`
+  const residentContactPhone = `137${phoneLast8}`
+  const updatedResidentProfile = await pass('居民维护本人允许修改的联系信息', () => residentClient.request(
+    '/resident-portal/profile',
+    {
+      method: 'PUT',
+      body: {
+        address: residentContactAddress,
+        phone: residentContactPhone,
+        version: residentOverview.profile.version
+      }
+    }
+  ))
+  assert.equal(updatedResidentProfile.id, resident.id, '居民联系信息更新不能改变档案归属')
+  assert.equal(updatedResidentProfile.gridId, resident.gridId, '居民联系信息更新不能改变所属网格')
+  assert.equal(updatedResidentProfile.realName, resident.realName, '居民联系信息更新不能改变姓名')
+  assert.equal(updatedResidentProfile.address, residentContactAddress, '居民联系地址未更新')
+  assert.ok(updatedResidentProfile.phoneMasked.endsWith(residentContactPhone.slice(-4)), '居民新手机号未按后四位脱敏')
   await assert.rejects(
     () => residentClient.request('/residents/sensitive-search', {
       method: 'POST',
@@ -1230,105 +1240,6 @@ async function main() {
     }),
     /HTTP 403/,
     '居民账号不应检索居民敏感字段'
-  )
-
-  const communityAnnouncement = await pass('社区公告创建', () => lifecycleClient.request('/announcements', {
-    method: 'POST',
-    body: {
-      audienceScope: 'COMMUNITY',
-      communityId: community.id,
-      title: `运行时社区公告-${shortKey}`,
-      content: `社区公告闭环验证 ${runKey}`,
-      pinned: false
-    }
-  }))
-  assertStatus(communityAnnouncement, 'DRAFT', '社区公告草稿')
-  const publishedAnnouncement = await pass('社区公告发布', () => lifecycleClient.request(
-    `/announcements/${communityAnnouncement.id}/publish`,
-    { method: 'POST', body: { version: communityAnnouncement.version, remark: '运行时公告发布' } }
-  ))
-  assertStatus(publishedAnnouncement, 'PUBLISHED', '已发布社区公告')
-  const residentAnnouncements = await pass('居民可见社区公告', () => residentClient.request('/announcements'))
-  assert.ok(
-    residentAnnouncements.some(item => item.id === publishedAnnouncement.id && item.status === 'PUBLISHED'),
-    '居民公告列表缺少已发布社区公告'
-  )
-  const withdrawnAnnouncement = await pass('社区公告撤回并对居民隐藏', () => lifecycleClient.request(
-    `/announcements/${publishedAnnouncement.id}/withdraw`,
-    { method: 'POST', body: { version: publishedAnnouncement.version, reason: '运行时撤回验证' } }
-  ))
-  assertStatus(withdrawnAnnouncement, 'WITHDRAWN', '已撤回社区公告')
-  const hiddenAnnouncements = await residentClient.request('/announcements')
-  assert.ok(!hiddenAnnouncements.some(item => item.id === withdrawnAnnouncement.id), '居民仍可看到已撤回公告')
-  await assert.rejects(
-    () => residentClient.request(`/announcements/${withdrawnAnnouncement.id}`),
-    /HTTP 404/,
-    '居民不能读取已撤回公告详情'
-  )
-  const announcementFlows = await lifecycleClient.request(`/announcements/${communityAnnouncement.id}/flows`)
-  assertFlowSequence(announcementFlows, ['CREATE', 'PUBLISH', 'WITHDRAW'], '社区公告流转顺序')
-
-  const serviceCatalogs = await pass('居民读取可申请服务目录', () => residentClient.request('/service-catalogs'))
-  assert.ok(Array.isArray(serviceCatalogs) && serviceCatalogs.length > 0, '居民服务目录不能为空')
-  const serviceCatalog = serviceCatalogs[0]
-  assert.ok(serviceCatalog.id, '服务目录缺少真实 ID')
-  const serviceRequestToken = randomUUID()
-  const serviceApplicationPayload = {
-    serviceCatalogId: serviceCatalog.id,
-    requestContent: `运行时服务申请-${runKey}`,
-    appointmentAt: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString().slice(0, 19),
-    requestToken: serviceRequestToken
-  }
-  let serviceApplication = await pass('居民服务申请提交', () => residentClient.request(
-    '/resident-portal/service-applications',
-    { method: 'POST', body: serviceApplicationPayload }
-  ))
-  assertStatus(serviceApplication, 'SUBMITTED', '居民服务申请')
-  assert.equal(serviceApplication.residentId, resident.id, '服务申请居民归属不匹配')
-  assert.equal(serviceApplication.gridId, grid.id, '服务申请网格快照不匹配')
-  const retriedServiceApplication = await pass('居民服务申请幂等令牌重试', () => residentClient.request(
-    '/resident-portal/service-applications',
-    { method: 'POST', body: serviceApplicationPayload }
-  ))
-  assert.deepEqual(
-    [retriedServiceApplication.id, retriedServiceApplication.version, retriedServiceApplication.status],
-    [serviceApplication.id, serviceApplication.version, serviceApplication.status],
-    '相同 requestToken 重试不得创建第二条服务申请'
-  )
-  serviceApplication = await pass('社区受理服务申请', () => lifecycleClient.request(
-    `/service-applications/${serviceApplication.id}/accept`,
-    { method: 'POST', body: { version: serviceApplication.version, remark: '社区受理服务申请' } }
-  ))
-  assertStatus(serviceApplication, 'ACCEPTED', '已受理服务申请')
-  assert.equal(serviceApplication.handlerUserId, lifecycleUser.id, '服务申请处理人不匹配')
-  serviceApplication = await pass('社区开始处理服务申请', () => lifecycleClient.request(
-    `/service-applications/${serviceApplication.id}/start`,
-    { method: 'POST', body: { version: serviceApplication.version, remark: '社区开始处理服务申请' } }
-  ))
-  assertStatus(serviceApplication, 'PROCESSING', '处理中服务申请')
-  serviceApplication = await pass('社区办结服务申请', () => lifecycleClient.request(
-    `/service-applications/${serviceApplication.id}/complete`,
-    {
-      method: 'POST',
-      body: {
-        version: serviceApplication.version,
-        resultSummary: `服务申请已办结-${runKey}`,
-        remark: '社区完成服务申请'
-      }
-    }
-  ))
-  assertStatus(serviceApplication, 'COMPLETED', '已办结服务申请')
-  const ratedServiceApplication = await pass('居民服务申请评分', () => residentClient.request(
-    `/resident-portal/service-applications/${serviceApplication.id}/rate`,
-    { method: 'POST', body: { version: serviceApplication.version, rating: 5, remark: '运行时服务评分' } }
-  ))
-  assertStatus(ratedServiceApplication, 'COMPLETED', '评分后服务申请')
-  assert.equal(ratedServiceApplication.rating, 5, '服务申请评分未保存')
-  const serviceApplicationFlows = await lifecycleClient.request(`/service-applications/${serviceApplication.id}/flows`)
-  assertFlowSequence(
-    serviceApplicationFlows,
-    ['APPLY', 'ACCEPT', 'START', 'COMPLETE', 'RATE'],
-    '服务申请流转顺序'
   )
 
   const residentReportedEvent = await pass('居民从本人网格上报事项', () => residentClient.request('/resident-portal/events', {
@@ -1532,64 +1443,6 @@ async function main() {
   const workerGrid = await worker.request(`/grids/${grid.id}`)
   assert.equal(workerGrid.id, grid.id, '网格员无法读取分配网格')
 
-  const patrolScheduledAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 19)
-  const patrolDueAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString().slice(0, 19)
-  const patrolPlan = await pass('创建巡查计划并原子生成任务', () => lifecycleClient.request('/patrol-plans', {
-    method: 'POST',
-    body: {
-      gridId: grid.id,
-      title: `运行时巡查计划-${shortKey}`,
-      inspectionContent: `巡查计划原子任务验证 ${runKey}`,
-      scheduledAt: patrolScheduledAt,
-      dueAt: patrolDueAt,
-      assigneeUserId: workerUser.id,
-      priority: 'MEDIUM'
-    }
-  }))
-  assertStatus(patrolPlan, 'ACTIVE', '巡查计划')
-  assert.equal(patrolPlan.gridId, grid.id, '巡查计划网格归属不匹配')
-  assert.equal(patrolPlan.assigneeUserId, workerUser.id, '巡查计划执行人不匹配')
-  assert.ok(patrolPlan.taskId && Number.isInteger(patrolPlan.taskVersion), '巡查计划未原子生成关联任务')
-  const patrolTask = await worker.request(`/tasks/${patrolPlan.taskId}`)
-  assertStatus(patrolTask, 'PENDING_ACCEPT', '巡查计划关联任务')
-  assert.equal(patrolTask.taskType, 'ROUTINE_INSPECTION', '巡查计划任务类型不匹配')
-  assert.equal(patrolTask.dispatcherUserId, lifecycleUser.id, '巡查任务派发人应为社区工作人员')
-  assert.equal(patrolTask.assigneeUserId, workerUser.id, '巡查任务执行人不匹配')
-  const acceptedPatrolTask = await pass('巡查任务接单', () => worker.request(
-    `/tasks/${patrolTask.id}/accept`,
-    { method: 'POST', body: { version: patrolTask.version, remark: '网格员接受巡查计划' } }
-  ))
-  assertStatus(acceptedPatrolTask, 'PROCESSING', '接单后巡查任务')
-  const pendingPatrolTask = await pass('巡查任务提交复核', () => worker.request(
-    `/tasks/${acceptedPatrolTask.id}/submit-review`,
-    {
-      method: 'POST',
-      body: {
-        version: acceptedPatrolTask.version,
-        handlingResult: `巡查计划已完成-${runKey}`,
-        attachmentIds: [],
-        remark: '提交社区复核'
-      }
-    }
-  ))
-  assertStatus(pendingPatrolTask, 'PENDING_REVIEW', '待复核巡查任务')
-  assert.notEqual(adminMe.id, patrolTask.dispatcherUserId, '巡查任务复核人不得是派发人')
-  const completedPatrolTask = await pass('非派发管理员复核巡查任务', () => admin.request(
-    `/tasks/${pendingPatrolTask.id}/review`,
-    {
-      method: 'POST',
-      body: { version: pendingPatrolTask.version, approved: true, remark: '管理员复核巡查通过' }
-    }
-  ))
-  assertStatus(completedPatrolTask, 'COMPLETED', '已完成巡查任务')
-  const patrolPage = await admin.request('/patrol-plans?page=1&size=100')
-  const completedPatrolPlan = patrolPage.items.find(item => item.id === patrolPlan.id)
-  assert.ok(completedPatrolPlan, '巡查计划列表缺少刚创建的计划')
-  assert.equal(completedPatrolPlan.status, 'COMPLETED', '巡查计划未随任务复核完成')
-  assert.equal(completedPatrolPlan.taskStatus, 'COMPLETED', '巡查计划关联任务未完成')
-  const patrolTaskFlows = await admin.request(`/tasks/${patrolPlan.taskId}/flows`)
-  assertFlowSequence(patrolTaskFlows, ['ASSIGN', 'ACCEPT', 'SUBMIT_REVIEW', 'APPROVE'], '巡查任务流转顺序')
-
   const downloadedAttachment = await pass('责任网格员授权下载事件附件', () =>
     worker.downloadFile(`/files/${attachment.id}`))
   assert.deepEqual(downloadedAttachment.bytes, attachmentBytes, '下载附件内容不一致')
@@ -1727,7 +1580,7 @@ async function main() {
   assert.ok(workerWorkbench.scopeLabel.includes('本人'), '网格员工作台必须明确按本人执行范围汇总')
   assert.ok(workerWorkbench.metrics && typeof workerWorkbench.metrics === 'object',
     '网格员工作台必须返回真实统计指标')
-  for (const key of ['pendingAccept', 'processing', 'pendingReview', 'overdue', 'activePatrolPlans', 'reportsLast7Days']) {
+  for (const key of ['pendingAccept', 'processing', 'pendingReview', 'overdue', 'reportsLast7Days']) {
     assert.ok(Number.isInteger(Number(workerWorkbench.metrics[key])) && Number(workerWorkbench.metrics[key]) >= 0,
       `网格员工作台指标 ${key} 必须是非负整数`)
   }
@@ -1981,6 +1834,42 @@ async function main() {
     }
   }
 
+  const auditStartAt = '2000-01-01T00:00:00'
+  const auditEndAt = '2100-01-01T00:00:00'
+  const attachmentAudit = await pass('附件下载审计按主体、时间、对象和结果查询', () => admin.request(query(
+    '/system/operations',
+    {
+      module: 'ATTACHMENT',
+      operator: residentMe.realName,
+      object: `/attachments/${residentAttachment.id}/content`,
+      result: 'SUCCESS',
+      startAt: auditStartAt,
+      endAt: auditEndAt,
+      page: 1,
+      size: 20
+    }
+  )))
+  assert.ok(
+    attachmentAudit.items.some(item => item.objectLabel.includes(`/attachments/${residentAttachment.id}/content`)),
+    '附件下载审计缺少居民本人下载记录'
+  )
+  const managementFailureAudit = await pass('关键管理失败审计按对象和结果查询', () => admin.request(query(
+    '/system/operations',
+    {
+      module: 'SYSTEM_MANAGEMENT',
+      object: `/api/system/event-categories/${managedCategory.id}`,
+      result: 'FAILURE',
+      startAt: auditStartAt,
+      endAt: auditEndAt,
+      page: 1,
+      size: 20
+    }
+  )))
+  assert.ok(
+    managementFailureAudit.items.some(item => item.objectLabel === `/api/system/event-categories/${managedCategory.id}`),
+    '关键管理审计缺少事件类别停用失败记录'
+  )
+
   console.log('SMOKE PASS')
   console.log(`runKey=${runKey}`)
   console.log(`community=${community.id} grid=${grid.id} household=${household.id} resident=${resident.id}`)
@@ -1989,9 +1878,6 @@ async function main() {
   console.log(`independentTask=${independentTask.id}:${completedIndependentTask.status}`)
   console.log(`rejectedEvent=${rejectedEvent.id}:${rejectedEvent.status} cancelledEvent=${cancelledEvent.id}:${cancelledEvent.status}`)
   console.log(`cancelledTask=${cancelledTask.id}:${cancelledTask.status}`)
-  console.log(`announcement=${communityAnnouncement.id}:${withdrawnAnnouncement.status}`)
-  console.log(`serviceApplication=${serviceApplication.id}:${ratedServiceApplication.status}:${ratedServiceApplication.rating}`)
-  console.log(`patrolPlan=${patrolPlan.id}:${completedPatrolPlan.status} patrolTask=${patrolPlan.taskId}:${completedPatrolTask.status}`)
   console.log(`workerUsername=${workerUsername} dispatcherUsername=${dispatcherUsername}`)
   if (demoProfileCode) {
     console.log(`demoProfile=${demoProfileCode} stagedEvent=${stagedEvent.id}:${stagedEvent.status}`)

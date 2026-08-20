@@ -72,7 +72,7 @@ xsrfHeaderName = X-XSRF-TOKEN
 
 `GET /api/auth/navigation` 只返回当前账号具有权限、菜单状态为 `ENABLED` 且 `type = "MENU"` 的项。每项固定为 `{ id, code, name, routePath, icon, sortNo }`，按 `sortNo`、`id` 排序。前端以此响应渲染导航，并只在本地已注册路由白名单中解析 `routePath`，不动态注册服务端路由；不得以本地静态菜单补回未授权入口。导航请求成功但列表为空时，登录、根路由和品牌首页均进入 `/forbidden`；只有导航请求失败时，才使用权限过滤后的本地首个已注册页面作为回退。
 
-四类角色导航必须固定区分：`SYSTEM_ADMIN` 返回系统与全局业务菜单，`COMMUNITY_STAFF` 返回概览/网格/居民/事件/任务，`GRID_WORKER` 只返回概览/事件/任务，`RESIDENT` 只返回居民服务台。网格员的 `grid:read`、`resident:read` 由 `ACTION` 权限提供，仅服务于责任范围内的关联数据读取，不产生 `GRID`、`RESIDENT` 导航项。
+四类角色导航必须按开题报告固定区分：`SYSTEM_ADMIN` 11 项，`COMMUNITY_STAFF` 6 项，`GRID_WORKER` 5 项，`RESIDENT` 4 项。公告、服务申请/评价、独立巡查、社区报表、聚合待办和系统健康保留为扩展代码，但 V12 不再把它们映射为默认角色菜单。网格员的 `grid:read`、`resident:read` 由 `ACTION` 权限提供，仅服务于责任范围内的关联数据读取，不产生通用管理入口。
 
 ## 3. 资源接口
 
@@ -226,7 +226,7 @@ xsrfHeaderName = X-XSRF-TOKEN
 | 社区服务处理 | `GET /api/service-applications`、`POST /{id}/accept|start|complete|reject` | 管理员只读全局；社区人员按网格范围处理 |
 | 居民服务 | `GET/POST /api/resident-portal/service-applications`、`POST /{id}/cancel|rate` | 只允许居民本人；提交可带 UUID `requestToken` |
 | 巡查计划 | `GET/POST /api/patrol-plans`、`GET /mine`、`POST /{id}/cancel` | 社区人员创建/取消，网格员只读本人；执行复用任务接口 |
-| 管理运行 | `GET /api/system/operations`、`GET /api/system/health` | 仅管理员；审计结果不返回敏感查询值 |
+| 管理运行 | `GET /api/system/operations`、`GET /api/system/health` | 仅管理员；审计支持模块、操作人、对象、时间和结果筛选，不返回敏感查询值 |
 
 工作台统一返回 `{ role, scopeLabel, metrics, focusItems, recentItems }`。公告、服务申请和巡查更新均使用乐观锁；状态动作必须同时新增对应 flow，不能以通用更新覆盖历史。
 
@@ -312,6 +312,7 @@ system:health:read
 | 提交注册 | `POST /api/auth/register` | `accountType`、`username`、`password`、`realName`、`phone`；居民另需 `idCardNumber` |
 | 审核注册 | `POST /api/system/users/{id}/registration-review` | `decision`、工作人员 `roleCodes`、驳回 `reason`、`version` |
 | 居民服务台 | `GET /api/resident-portal/overview` | 本人脱敏档案、事件类别、本人事件 |
+| 居民联系信息 | `PUT /api/resident-portal/profile` | `address`、可选新 `phone`、`version`；目标固定为当前账号绑定居民 |
 | 居民上报 | `POST /api/resident-portal/events` | `categoryId`、`title`、`description`、`severity`、`address` |
 
 公开注册统一创建 `PENDING/DISABLED` 账号。工作人员不能自行选择角色；居民提交的手机号先移除空白与连字符、身份证号转为大写后参与匹配，两个字段都只用于计算 SHA-256 等值指纹并匹配未绑定的既有居民档案，不写入 `sys_user.phone`，接口也不返回具体哪个身份字段不匹配。批准居民申请时，在同一事务中绑定 `resident.user_id`、授予唯一 `RESIDENT` 角色并启用账号。
@@ -326,6 +327,8 @@ system:health:read
 - `resident_sensitive_access_log` 记录成功的 `SEARCH`/`VIEW` 操作人、居民、字段类型、用途、结果数和时间；不得保存输入明文、密文或等值指纹。
 - `GET /api/residents/sensitive-access-logs` 接受可选 `action`（`SEARCH`/`VIEW`）、`fieldType`（`ID_CARD`/`PHONE`/`BOTH`）、`keyword`、`page` 和 `size`，并返回 `Cache-Control: no-store`。它仅返回分页审计元数据 `{ id, operatorUserId, operatorName, operatorUsername, residentId, residentNo, residentName, scopeGridId, scopeGridCode, scopeGridName, action, fieldType, purpose, resultCount, createdAt }`；其中 `residentNo`、`residentName` 已脱敏，接口、响应和日志不得返回敏感输入明文、密文、哈希或指纹。系统管理员查询全局记录；社区工作人员只按日志已写入的 `scopeGridId` 查询所属社区网格，另可查看本人产生的空范围记录，绝不以居民当前 `gridId` 推导历史审计可见性。V6 的空范围历史保持 `NULL`，V7 不以当前居民网格回填它们。
 - 附件下载必须经过 `/api/files/{id}` 的 `file:read` 权限和事件网格数据范围校验，不直接暴露上传目录。
+- 授权附件下载，以及用户、角色、菜单、事件类别、网格责任和密码变更等关键管理请求，会写入 `operation_audit_log`。记录只包含操作人、模块、动作、HTTP 方法、对象路径、状态码、成功/失败和时间，不保存请求体或敏感值。
+- `GET /api/system/operations` 接受可选 `module`、`operator`、`object`、`result`（`SUCCESS`/`FAILURE`）、`startAt`、`endAt`、`page` 和 `size`，统一返回事件/任务/敏感访问等既有流转与 V11 操作审计。
 - 上传需要 `file:upload` 权限，同时校验声明 MIME、文件签名、10 MiB 大小上限并计算 SHA-256；文件以随机名称写入配置化根目录，数据库只保存元数据。事件与任务附件分别以 `event_id` 或 `task_id` 加 `upload_token` 约束上传重试幂等；软删除记录不再通过原令牌作为有效附件返回。已删除附件在提交后清理物理文件，`file_purged_at` 仅在清理完成后写入；未写入该标记的待清理记录由定时扫描重试，文件已不存在时仍可安全完成标记。
 
 ## 7. 实现阶段静态检查
@@ -333,6 +336,6 @@ system:health:read
 - Controller 不直接注入 Mapper。
 - 工作流入口使用事务，非法状态跳转不能退化为通用更新。
 - 代码中不得出现 `csrf.disable()`、`SessionCreationPolicy.STATELESS` 或带凭据的通配 CORS。
-- Java 状态枚举必须与 Flyway CHECK 集合一致；V1—V9 的角色、注册、隐私、会话、审计、附件、改密和导航合同保持不变；公告、服务申请、评分、巡查计划、工作台菜单与新增权限必须与 Flyway V10 一致。
+- Java 状态枚举必须与 Flyway CHECK 集合一致；V1—V10 的角色、注册、隐私、会话、审计、附件、改密、导航和工作台合同保持不变；居民本人联系资料维护与统一操作审计必须与 Flyway V11 一致。
 - 除 `backend/src/main/resources/db/migration` 外不维护第二份建表 SQL。
 - 所有详情、状态动作、附件和大屏查询都预留服务端数据范围入口。

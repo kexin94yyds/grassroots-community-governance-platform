@@ -2,6 +2,8 @@ package com.cunzhi.governance.config;
 
 import com.cunzhi.governance.common.error.ErrorCode;
 import com.cunzhi.governance.auth.security.SessionFreshnessFilter;
+import com.cunzhi.governance.workbench.audit.OperationAuditFilter;
+import com.cunzhi.governance.workbench.mapper.OperationAuditMapper;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -22,6 +24,7 @@ import org.springframework.security.web.authentication.session.SessionAuthentica
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.security.web.context.SecurityContextHolderFilter;
 import org.springframework.security.web.context.SecurityContextRepository;
+import org.springframework.security.web.access.intercept.AuthorizationFilter;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.csrf.CsrfAuthenticationStrategy;
 import org.springframework.security.web.csrf.CsrfTokenRepository;
@@ -88,7 +91,8 @@ public class SecurityConfig {
             HttpSecurity http,
             SecurityContextRepository securityContextRepository,
             CsrfTokenRepository csrfTokenRepository,
-            SessionFreshnessFilter sessionFreshnessFilter
+            SessionFreshnessFilter sessionFreshnessFilter,
+            OperationAuditMapper operationAuditMapper
     ) throws Exception {
         http
                 .cors(Customizer.withDefaults())
@@ -113,6 +117,7 @@ public class SecurityConfig {
                 .httpBasic(basic -> basic.disable())
                 .logout(logout -> logout.disable());
         http.addFilterAfter(sessionFreshnessFilter, SecurityContextHolderFilter.class);
+        http.addFilterAfter(new OperationAuditFilter(operationAuditMapper), AuthorizationFilter.class);
         return http.build();
     }
 

@@ -1,9 +1,9 @@
 {
   "contractVersion": 1,
   "sourcePlan": "四角色完整工作台实施计划_2026-08-19.md",
-  "minimumNavigationEntries": 6,
+  "minimumNavigationEntries": 4,
   "requiredRoles": ["SYSTEM_ADMIN", "COMMUNITY_STAFF", "GRID_WORKER", "RESIDENT"],
-  "exactNavigationCounts": {"SYSTEM_ADMIN": 14, "COMMUNITY_STAFF": 11, "GRID_WORKER": 7, "RESIDENT": 7},
+  "exactNavigationCounts": {"SYSTEM_ADMIN": 11, "COMMUNITY_STAFF": 6, "GRID_WORKER": 5, "RESIDENT": 4},
   "statsFields": ["role", "scopeLabel", "metrics", "focusItems", "recentItems"],
   "permissions": [
     "workbench:admin:read", "workbench:community:read", "workbench:grid:read", "workbench:resident:read",
@@ -15,8 +15,9 @@
   "roles": {
     "SYSTEM_ADMIN": {
       "homePath": "/admin/home",
+      "hiddenRoutes": ["/announcements", "/system/service-catalogs", "/system/health"],
       "statsApi": {"method": "GET", "path": "/api/workbenches/admin/summary", "permission": "workbench:admin:read"},
-      "stateTransitions": ["PENDING->APPROVED", "PENDING->REJECTED", "DRAFT->PUBLISHED", "PUBLISHED->WITHDRAWN"],
+      "stateTransitions": ["PENDING->APPROVED", "PENDING->REJECTED"],
       "uiWriteChecks": [
         {"id": "create-user", "routePath": "/system/users", "buttonText": "新增用户", "submitText": "保存"},
         {"id": "update-role", "routePath": "/system/roles", "buttonText": "配置权限", "submitText": "保存角色配置"}
@@ -32,10 +33,7 @@
         {"code": "RESIDENT", "routePath": "/residents", "permission": "resident:read", "readApi": "/api/residents", "dbTables": ["resident", "household"], "states": ["ACTIVE", "MOVED", "DECEASED", "ARCHIVED"]},
         {"code": "EVENT", "routePath": "/events", "permission": "event:read", "readApi": "/api/events", "dbTables": ["governance_event", "event_flow"], "states": ["REPORTED", "ACCEPTED", "ASSIGNED", "PROCESSING", "PENDING_REVIEW", "CLOSED", "REJECTED", "CANCELLED"]},
         {"code": "TASK", "routePath": "/tasks", "permission": "task:read", "readApi": "/api/tasks", "dbTables": ["work_task", "task_flow"], "states": ["PENDING_ACCEPT", "PROCESSING", "PENDING_REVIEW", "COMPLETED", "CANCELLED"]},
-        {"code": "ANNOUNCEMENT", "routePath": "/announcements", "permission": "announcement:read", "readApi": "/api/announcements", "dbTables": ["community_announcement", "announcement_flow"], "states": ["DRAFT", "PUBLISHED", "WITHDRAWN"]},
-        {"code": "SERVICE_CATALOG", "routePath": "/system/service-catalogs", "permission": "service:catalog:manage", "readApi": "/api/system/service-catalogs", "dbTables": ["service_catalog"], "states": ["ENABLED", "DISABLED"]},
-        {"code": "ADMIN_AUDIT", "routePath": "/system/operations", "permission": "system:audit:read", "readApi": "/api/system/operations", "dbTables": ["event_flow", "task_flow", "resident_sensitive_access_log", "announcement_flow", "service_application_flow"], "states": ["SUCCESS"]},
-        {"code": "SYSTEM_HEALTH", "routePath": "/system/health", "permission": "system:health:read", "readApi": "/api/system/health", "dbTables": ["flyway_schema_history", "sys_user", "sys_role", "sys_menu"], "states": ["HEALTHY", "FAILED"]}
+        {"code": "ADMIN_AUDIT", "routePath": "/system/operations", "permission": "system:audit:read", "readApi": "/api/system/operations", "dbTables": ["event_flow", "task_flow", "resident_sensitive_access_log", "operation_audit_log"], "states": ["SUCCESS", "FAILURE"]}
       ],
       "writeGroups": [
         {"id": "admin-account-governance", "operations": [
@@ -44,65 +42,60 @@
         ]},
         {"id": "admin-catalog-governance", "operations": [
           {"id": "update-role", "method": "PUT", "path": "/api/system/roles/{code}", "permission": "system:role:manage", "tables": ["sys_role", "sys_role_menu"], "states": ["ENABLED", "DISABLED"], "probeBody": {"name": "权限探针", "description": "权限探针", "status": "ENABLED", "menuIds": ["100"], "version": 0}, "forbiddenRoles": ["COMMUNITY_STAFF", "GRID_WORKER", "RESIDENT"]},
-          {"id": "update-service-catalog", "method": "PUT", "path": "/api/system/service-catalogs/{id}", "permission": "service:catalog:manage", "tables": ["service_catalog"], "states": ["ENABLED", "DISABLED"], "probeBody": {"name": "权限探针", "description": "权限探针", "sortNo": 999, "status": "ENABLED", "version": 0}, "forbiddenRoles": ["COMMUNITY_STAFF", "GRID_WORKER", "RESIDENT"]}
+          {"id": "update-event-category", "method": "PUT", "path": "/api/system/event-categories/{id}", "permission": "event:category:manage", "tables": ["event_category"], "states": ["ENABLED", "DISABLED"], "probeBody": {"name": "权限探针", "description": "权限探针", "sortNo": 999, "status": "ENABLED", "version": 0}, "forbiddenRoles": ["COMMUNITY_STAFF", "GRID_WORKER", "RESIDENT"]}
         ]}
       ]
     },
     "COMMUNITY_STAFF": {
       "homePath": "/community/home",
+      "hiddenRoutes": ["/community/todo", "/community/service", "/community/patrol", "/community/report", "/announcements"],
       "statsApi": {"method": "GET", "path": "/api/workbenches/community/summary", "permission": "workbench:community:read"},
-      "stateTransitions": ["SUBMITTED->ACCEPTED", "ACCEPTED->PROCESSING", "PROCESSING->COMPLETED", "NONE->ACTIVE", "DRAFT->PUBLISHED", "PUBLISHED->WITHDRAWN"],
+      "stateTransitions": ["REPORTED->ACCEPTED", "ACCEPTED->ASSIGNED", "PENDING_REVIEW->CLOSED"],
       "uiWriteChecks": [
-        {"id": "create-patrol-plan", "routePath": "/community/patrol", "buttonText": "新建巡查计划", "submitText": "创建计划"},
-        {"id": "publish-community-announcement", "routePath": "/announcements", "buttonText": "新建公告", "submitText": "保存草稿"}
+        {"id": "create-grid", "routePath": "/grids", "buttonText": "新增区域", "submitText": "保存"},
+        {"id": "report-community-event", "routePath": "/events", "buttonText": "上报事件", "submitText": "提交上报"}
       ],
       "navigation": [
         {"code": "COMMUNITY_HOME", "routePath": "/community/home", "permission": "workbench:community:read", "readApi": "/api/workbenches/community/summary", "dbTables": ["grid_area", "resident", "governance_event", "work_task"], "states": ["REPORTED", "PROCESSING", "PENDING_REVIEW", "CLOSED"]},
-        {"code": "COMMUNITY_TODO", "routePath": "/community/todo", "permission": "workbench:community:read", "readApi": "/api/service-applications", "dbTables": ["governance_event", "work_task", "service_application"], "states": ["REPORTED", "PENDING_REVIEW", "SUBMITTED"]},
         {"code": "DASHBOARD", "routePath": "/dashboard", "permission": "dashboard:read", "readApi": "/api/dashboard/overview", "dbTables": ["grid_area", "governance_event", "event_category", "work_task"], "states": ["REPORTED", "PROCESSING", "CLOSED"]},
         {"code": "GRID", "routePath": "/grids", "permission": "grid:read", "readApi": "/api/grids", "dbTables": ["grid_area", "user_area_assignment"], "states": ["ENABLED", "DISABLED", "ACTIVE", "ENDED"]},
         {"code": "RESIDENT", "routePath": "/residents", "permission": "resident:read", "readApi": "/api/residents", "dbTables": ["resident", "household"], "states": ["ACTIVE", "MOVED", "DECEASED", "ARCHIVED"]},
         {"code": "EVENT", "routePath": "/events", "permission": "event:read", "readApi": "/api/events", "dbTables": ["governance_event", "event_flow"], "states": ["REPORTED", "ACCEPTED", "ASSIGNED", "PROCESSING", "PENDING_REVIEW", "CLOSED", "REJECTED", "CANCELLED"]},
-        {"code": "TASK", "routePath": "/tasks", "permission": "task:read", "readApi": "/api/tasks", "dbTables": ["work_task", "task_flow"], "states": ["PENDING_ACCEPT", "PROCESSING", "PENDING_REVIEW", "COMPLETED", "CANCELLED"]},
-        {"code": "COMMUNITY_SERVICE", "routePath": "/community/service", "permission": "service:application:read", "readApi": "/api/service-applications", "dbTables": ["service_application", "service_application_flow"], "states": ["SUBMITTED", "ACCEPTED", "PROCESSING", "COMPLETED", "REJECTED", "CANCELLED"]},
-        {"code": "COMMUNITY_PATROL", "routePath": "/community/patrol", "permission": "patrol:read", "readApi": "/api/patrol-plans", "dbTables": ["patrol_plan", "work_task", "task_flow"], "states": ["ACTIVE", "COMPLETED", "CANCELLED", "PENDING_ACCEPT"]},
-        {"code": "COMMUNITY_REPORT", "routePath": "/community/report", "permission": "workbench:community:read", "readApi": "/api/workbenches/community/summary", "dbTables": ["resident", "governance_event", "work_task", "service_application"], "states": ["ACTIVE", "REPORTED", "PROCESSING", "COMPLETED"]},
-        {"code": "ANNOUNCEMENT", "routePath": "/announcements", "permission": "announcement:read", "readApi": "/api/announcements", "dbTables": ["community_announcement", "announcement_flow"], "states": ["DRAFT", "PUBLISHED", "WITHDRAWN"]}
+        {"code": "TASK", "routePath": "/tasks", "permission": "task:read", "readApi": "/api/tasks", "dbTables": ["work_task", "task_flow"], "states": ["PENDING_ACCEPT", "PROCESSING", "PENDING_REVIEW", "COMPLETED", "CANCELLED"]}
       ],
       "writeGroups": [
-        {"id": "community-service-lifecycle", "operations": [
-          {"id": "accept-service-application", "method": "POST", "path": "/api/service-applications/{id}/accept", "permission": "service:application:handle", "tables": ["service_application", "service_application_flow"], "states": ["SUBMITTED", "ACCEPTED"], "probeBody": {"version": 0, "remark": "权限探针"}, "forbiddenRoles": ["GRID_WORKER", "RESIDENT"]},
-          {"id": "complete-service-application", "method": "POST", "path": "/api/service-applications/{id}/complete", "permission": "service:application:handle", "tables": ["service_application", "service_application_flow"], "states": ["PROCESSING", "COMPLETED"], "probeBody": {"version": 0, "resultSummary": "权限探针", "remark": "权限探针"}, "forbiddenRoles": ["GRID_WORKER", "RESIDENT"]}
+        {"id": "community-event-lifecycle", "operations": [
+          {"id": "accept-event", "method": "POST", "path": "/api/events/{id}/accept", "permission": "event:accept", "tables": ["governance_event", "event_flow"], "states": ["REPORTED", "ACCEPTED"], "probeBody": {"version": 0, "remark": "权限探针"}, "forbiddenRoles": ["GRID_WORKER", "RESIDENT"]},
+          {"id": "assign-event", "method": "POST", "path": "/api/events/{id}/assign", "permission": "event:assign", "tables": ["governance_event", "event_flow", "work_task", "task_flow"], "states": ["ACCEPTED", "ASSIGNED"], "probeBody": {"version": 0, "assigneeUserId": "0", "taskTitle": "权限探针", "taskDescription": "权限探针验证", "priority": "LOW", "remark": "权限探针"}, "forbiddenRoles": ["GRID_WORKER", "RESIDENT"]}
         ]},
-        {"id": "community-patrol-governance", "operations": [
-          {"id": "create-patrol-plan", "method": "POST", "path": "/api/patrol-plans", "permission": "patrol:plan:write", "tables": ["patrol_plan", "work_task", "task_flow"], "states": ["ACTIVE", "PENDING_ACCEPT"], "probeBody": {"gridId": "0", "title": "权限探针", "inspectionContent": "权限探针", "scheduledAt": "2099-01-01T00:00:00", "dueAt": "2099-01-02T00:00:00", "assigneeUserId": "0", "priority": "LOW"}, "forbiddenRoles": ["GRID_WORKER", "RESIDENT"]},
-          {"id": "publish-community-announcement", "method": "POST", "path": "/api/announcements/{id}/publish", "permission": "announcement:community:write", "tables": ["community_announcement", "announcement_flow"], "states": ["DRAFT", "PUBLISHED"], "probeBody": {"version": 0, "remark": "权限探针"}, "forbiddenRoles": ["GRID_WORKER", "RESIDENT"]}
+        {"id": "community-task-governance", "operations": [
+          {"id": "create-task", "method": "POST", "path": "/api/tasks", "permission": "task:create", "tables": ["work_task", "task_flow"], "states": ["PENDING_ACCEPT"], "probeBody": {"gridId": "0", "taskType": "OTHER", "title": "权限探针", "description": "权限探针验证", "priority": "LOW", "assigneeUserId": "0"}, "forbiddenRoles": ["GRID_WORKER", "RESIDENT"]},
+          {"id": "review-task", "method": "POST", "path": "/api/tasks/{id}/review", "permission": "task:review", "tables": ["work_task", "task_flow", "governance_event", "event_flow"], "states": ["PENDING_REVIEW", "COMPLETED", "PROCESSING"], "probeBody": {"version": 0, "approved": true, "remark": "权限探针"}, "forbiddenRoles": ["GRID_WORKER", "RESIDENT"]}
         ]}
       ]
     },
     "GRID_WORKER": {
       "homePath": "/grid/home",
+      "hiddenRoutes": ["/grid/patrol", "/announcements"],
       "statsApi": {"method": "GET", "path": "/api/workbenches/grid/summary", "permission": "workbench:grid:read"},
-      "stateTransitions": ["PENDING_ACCEPT->PROCESSING", "PROCESSING->PENDING_REVIEW", "PENDING_REVIEW->COMPLETED", "NONE->REPORTED", "NONE->ACTIVE", "NONE->PENDING_ACCEPT"],
+      "stateTransitions": ["PENDING_ACCEPT->PROCESSING", "PROCESSING->PENDING_REVIEW", "PENDING_REVIEW->COMPLETED", "NONE->REPORTED"],
       "uiWriteChecks": [
         {"id": "accept-task", "routePath": "/grid/tasks", "buttonText": "接单", "submitText": "确认接单"},
         {"id": "report-grid-event", "routePath": "/grid/event-report", "buttonText": "上报事件", "submitText": "提交上报"}
       ],
       "navigation": [
-        {"code": "GRID_HOME", "routePath": "/grid/home", "permission": "workbench:grid:read", "readApi": "/api/workbenches/grid/summary", "dbTables": ["work_task", "patrol_plan", "governance_event"], "states": ["PENDING_ACCEPT", "PROCESSING", "PENDING_REVIEW", "COMPLETED"]},
-        {"code": "GRID_PATROL", "routePath": "/grid/patrol", "permission": "patrol:read", "readApi": "/api/patrol-plans/mine", "dbTables": ["patrol_plan", "work_task", "task_flow"], "states": ["ACTIVE", "COMPLETED", "CANCELLED", "PENDING_ACCEPT"]},
+        {"code": "GRID_HOME", "routePath": "/grid/home", "permission": "workbench:grid:read", "readApi": "/api/workbenches/grid/summary", "dbTables": ["work_task", "governance_event"], "states": ["PENDING_ACCEPT", "PROCESSING", "PENDING_REVIEW", "COMPLETED"]},
         {"code": "GRID_EVENT_REPORT", "routePath": "/grid/event-report", "permission": "event:report", "readApi": "/api/events/categories", "dbTables": ["governance_event", "event_flow"], "states": ["REPORTED"]},
         {"code": "GRID_TASK", "routePath": "/grid/tasks", "permission": "task:read", "readApi": "/api/tasks", "dbTables": ["work_task", "task_flow", "task_attachment"], "states": ["PENDING_ACCEPT", "PROCESSING", "PENDING_REVIEW", "COMPLETED", "CANCELLED"]},
         {"code": "GRID_MAP", "routePath": "/grid/map", "permission": "grid:read", "readApi": "/api/grids", "dbTables": ["grid_area", "user_area_assignment"], "states": ["ENABLED", "DISABLED", "ACTIVE"]},
-        {"code": "GRID_HISTORY", "routePath": "/grid/history", "permission": "workbench:grid:read", "readApi": "/api/events", "dbTables": ["event_flow", "task_flow", "patrol_plan"], "states": ["COMPLETED", "CANCELLED", "REJECTED"]},
-        {"code": "ANNOUNCEMENT", "routePath": "/announcements", "permission": "announcement:read", "readApi": "/api/announcements", "dbTables": ["community_announcement", "announcement_flow"], "states": ["PUBLISHED", "WITHDRAWN"]}
+        {"code": "GRID_HISTORY", "routePath": "/grid/history", "permission": "workbench:grid:read", "readApi": "/api/events", "dbTables": ["event_flow", "task_flow"], "states": ["COMPLETED", "CANCELLED", "REJECTED"]}
       ],
       "writeGroups": [
         {"id": "grid-task-execution", "operations": [
           {"id": "accept-task", "method": "POST", "path": "/api/tasks/{id}/accept", "permission": "task:accept", "tables": ["work_task", "task_flow"], "states": ["PENDING_ACCEPT", "PROCESSING"], "probeBody": {"version": 0, "remark": "权限探针"}, "forbiddenRoles": ["COMMUNITY_STAFF", "RESIDENT"]},
           {"id": "submit-task-review", "method": "POST", "path": "/api/tasks/{id}/submit-review", "permission": "task:handle", "tables": ["work_task", "task_flow", "task_attachment"], "states": ["PROCESSING", "PENDING_REVIEW"], "probeBody": {"version": 0, "handlingResult": "权限探针", "attachmentIds": [], "remark": "权限探针"}, "forbiddenRoles": ["COMMUNITY_STAFF", "RESIDENT"]}
         ]},
-        {"id": "grid-patrol-and-event", "operations": [
+        {"id": "grid-event-and-evidence", "operations": [
           {"id": "report-grid-event", "method": "POST", "path": "/api/events", "permission": "event:report", "tables": ["governance_event", "event_flow"], "states": ["REPORTED"], "probeBody": {"categoryId": "0", "gridId": "0", "title": "权限探针", "description": "权限探针验证", "reportChannel": "WEB", "severity": "LOW"}, "forbiddenRoles": ["RESIDENT"]},
           {"id": "upload-task-evidence", "method": "POST", "path": "/api/tasks/{id}/attachments", "permission": "task:handle", "tables": ["task_attachment"], "states": ["ACTIVE", "DELETED"], "probeBody": null, "probeable": false, "forbiddenRoles": ["COMMUNITY_STAFF", "RESIDENT"]}
         ]}
@@ -110,29 +103,27 @@
     },
     "RESIDENT": {
       "homePath": "/resident/home",
+      "hiddenRoutes": ["/resident/service", "/resident/ratings", "/announcements"],
       "statsApi": {"method": "GET", "path": "/api/workbenches/resident/summary", "permission": "workbench:resident:read"},
-      "stateTransitions": ["NONE->REPORTED", "NONE->ACTIVE", "NONE->SUBMITTED", "SUBMITTED->ACCEPTED", "ACCEPTED->PROCESSING", "PROCESSING->COMPLETED", "COMPLETED->COMPLETED"],
+      "stateTransitions": ["NONE->REPORTED", "ACTIVE->ACTIVE"],
       "uiWriteChecks": [
         {"id": "report-resident-event", "routePath": "/resident/report", "buttonText": "提交事项", "submitText": "提交事项"},
-        {"id": "apply-service", "routePath": "/resident/service", "buttonText": "申请服务", "submitText": "提交申请"}
+        {"id": "update-resident-profile", "routePath": "/resident/profile", "buttonText": "保存联系信息", "submitText": "保存联系信息", "direct": true}
       ],
       "navigation": [
         {"code": "RESIDENT_PORTAL", "routePath": "/resident/home", "permission": "resident:portal", "readApi": "/api/resident-portal/overview", "dbTables": ["resident", "governance_event", "event_attachment"], "states": ["REPORTED", "ACCEPTED", "ASSIGNED", "PROCESSING", "PENDING_REVIEW", "CLOSED", "REJECTED", "CANCELLED"]},
         {"code": "RESIDENT_REPORT", "routePath": "/resident/report", "permission": "resident:portal", "readApi": "/api/events/categories", "dbTables": ["governance_event", "event_flow", "event_attachment"], "states": ["REPORTED"]},
         {"code": "RESIDENT_EVENTS", "routePath": "/resident/events", "permission": "resident:portal", "readApi": "/api/resident-portal/overview", "dbTables": ["governance_event", "event_flow"], "states": ["REPORTED", "PROCESSING", "CLOSED", "REJECTED", "CANCELLED"]},
-        {"code": "RESIDENT_PROFILE", "routePath": "/resident/profile", "permission": "resident:portal", "readApi": "/api/resident-portal/overview", "dbTables": ["resident", "household", "grid_area"], "states": ["ACTIVE", "MOVED", "DECEASED", "ARCHIVED"]},
-        {"code": "RESIDENT_SERVICE", "routePath": "/resident/service", "permission": "resident:portal", "readApi": "/api/resident-portal/service-applications", "dbTables": ["service_catalog", "service_application", "service_application_flow"], "states": ["SUBMITTED", "ACCEPTED", "PROCESSING", "COMPLETED", "REJECTED", "CANCELLED"]},
-        {"code": "RESIDENT_RATING", "routePath": "/resident/ratings", "permission": "resident:portal", "readApi": "/api/resident-portal/service-applications", "dbTables": ["service_application", "service_application_flow"], "states": ["COMPLETED"]},
-        {"code": "ANNOUNCEMENT", "routePath": "/announcements", "permission": "announcement:read", "readApi": "/api/announcements", "dbTables": ["community_announcement", "announcement_flow"], "states": ["PUBLISHED", "WITHDRAWN"]}
+        {"code": "RESIDENT_PROFILE", "routePath": "/resident/profile", "permission": "resident:portal", "readApi": "/api/resident-portal/overview", "dbTables": ["resident", "household", "grid_area"], "states": ["ACTIVE", "MOVED", "DECEASED", "ARCHIVED"]}
       ],
       "writeGroups": [
         {"id": "resident-event-reporting", "operations": [
           {"id": "report-resident-event", "method": "POST", "path": "/api/resident-portal/events", "permission": "resident:portal", "tables": ["governance_event", "event_flow"], "states": ["REPORTED"], "probeBody": {"categoryId": "0", "title": "权限探针", "description": "权限探针验证", "severity": "LOW"}, "forbiddenRoles": ["SYSTEM_ADMIN", "COMMUNITY_STAFF", "GRID_WORKER"]},
           {"id": "upload-resident-event-attachment", "method": "POST", "path": "/api/resident-portal/events/{eventId}/attachments", "permission": "resident:portal", "tables": ["event_attachment"], "states": ["ACTIVE", "DELETED"], "probeBody": null, "probeable": false, "forbiddenRoles": ["SYSTEM_ADMIN", "COMMUNITY_STAFF", "GRID_WORKER"]}
         ]},
-        {"id": "resident-service-lifecycle", "operations": [
-          {"id": "apply-service", "method": "POST", "path": "/api/resident-portal/service-applications", "permission": "service:application:apply", "tables": ["service_application", "service_application_flow"], "states": ["SUBMITTED"], "probeBody": {"serviceCatalogId": "0", "requestContent": "权限探针", "appointmentAt": "2099-01-01T00:00:00", "requestToken": "00000000-0000-4000-8000-000000000000"}, "forbiddenRoles": ["SYSTEM_ADMIN", "COMMUNITY_STAFF", "GRID_WORKER"]},
-          {"id": "rate-completed-service", "method": "POST", "path": "/api/resident-portal/service-applications/{id}/rate", "permission": "service:application:rate", "tables": ["service_application", "service_application_flow"], "states": ["COMPLETED"], "probeBody": {"version": 0, "rating": 5, "remark": "权限探针"}, "forbiddenRoles": ["SYSTEM_ADMIN", "COMMUNITY_STAFF", "GRID_WORKER"]}
+        {"id": "resident-profile-maintenance", "operations": [
+          {"id": "update-resident-profile", "method": "PUT", "path": "/api/resident-portal/profile", "permission": "resident:portal", "tables": ["resident"], "states": ["ACTIVE"], "probeBody": {"address": "权限探针地址", "phone": null, "version": 0}, "forbiddenRoles": ["SYSTEM_ADMIN", "COMMUNITY_STAFF", "GRID_WORKER"]},
+          {"id": "delete-resident-attachment", "method": "DELETE", "path": "/api/resident-portal/events/{eventId}/attachments/{id}", "permission": "resident:portal", "tables": ["event_attachment"], "states": ["ACTIVE", "DELETED"], "probeBody": null, "probeable": false, "forbiddenRoles": ["SYSTEM_ADMIN", "COMMUNITY_STAFF", "GRID_WORKER"]}
         ]}
       ]
     }

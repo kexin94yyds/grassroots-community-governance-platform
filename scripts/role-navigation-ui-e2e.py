@@ -171,6 +171,12 @@ def main() -> int:
                 visible_write_check(page, write_check)
                 write_affordances.append(write_check["id"])
 
+            for hidden_path in contract.get("hiddenRoutes", []):
+                page.goto(f"{base_url}{hidden_path}", wait_until="domcontentloaded")
+                page.wait_for_url("**/forbidden")
+                check(page.get_by_text("无权访问", exact=True).is_visible(),
+                      f"{role} opening-report-hidden route leaked: {hidden_path}")
+
             own_routes = set(expected_routes)
             other_routes = {
                 entry["routePath"]

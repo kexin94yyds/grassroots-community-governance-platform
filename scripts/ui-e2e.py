@@ -904,9 +904,6 @@ def run_resident_suite(page: Page, base_url: str, username: str, password: str, 
             "RESIDENT_REPORT",
             "RESIDENT_EVENTS",
             "RESIDENT_PROFILE",
-            "RESIDENT_SERVICE",
-            "RESIDENT_RATING",
-            "ANNOUNCEMENT",
         ]
     )
     sidebar_labels = [text.strip() for text in page.locator(".app-menu .el-menu-item").all_inner_texts()]
@@ -916,6 +913,19 @@ def run_resident_suite(page: Page, base_url: str, username: str, password: str, 
     check(overview_snapshot["status"] == 200 and overview_snapshot["body"].get("code") == "OK",
           "Resident overview API failed")
     overview = overview_snapshot["body"].get("data") or {}
+    navigate(page, f"{base_url}/resident/profile")
+    profile_panel = page.locator(".resident-profile-maintenance")
+    profile_panel.wait_for(state="visible")
+    updated_address = f"{overview.get('profile', {}).get('address') or '居民地址'}-页面维护"
+    profile_panel.locator("input").nth(0).fill(updated_address)
+    with page.expect_response(
+        lambda response: "/api/resident-portal/profile" in response.url
+        and response.request.method == "PUT"
+    ) as profile_update_info:
+        profile_panel.get_by_role("button", name="保存联系信息", exact=True).click()
+    check(profile_update_info.value.ok, f"Resident profile update failed with HTTP {profile_update_info.value.status}")
+    check(updated_address in page.locator(".resident-profile-note").inner_text(),
+          "Resident profile page did not render the updated address")
     resident_attachment_snapshot = page.evaluate(
         """
         async () => {
@@ -961,6 +971,7 @@ def run_resident_suite(page: Page, base_url: str, username: str, password: str, 
         "eventNo": resident_event["eventNo"],
         "attachment": resident_attachment_snapshot["attachment"]["originalName"],
         "overviewEvents": len(overview.get("events") or []),
+        "profileUpdated": True,
     }
 
 

@@ -11,6 +11,9 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.format.annotation.DateTimeFormat;
+
+import java.time.LocalDateTime;
 
 @RestController
 public class WorkbenchController {
@@ -49,11 +52,15 @@ public class WorkbenchController {
     @PreAuthorize("@authz.hasPermission('system:audit:read')")
     public ApiResponse<PageResponse<SystemOperationView>> operations(
             @RequestParam(required = false) String module,
-            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) String operator,
+            @RequestParam(required = false) String object,
+            @RequestParam(required = false) String result,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime startAt,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime endAt,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int size
     ) {
-        return ApiResponse.ok(service.operations(module, keyword, page, size));
+        return ApiResponse.ok(service.operations(module, operator, object, result, startAt, endAt, page, size));
     }
 
     @GetMapping("/api/system/health")

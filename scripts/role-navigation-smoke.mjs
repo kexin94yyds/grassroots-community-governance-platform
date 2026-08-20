@@ -173,7 +173,8 @@ async function main() {
     const navigation = await client.request('/auth/navigation')
     const expectedCodes = profile.contract.navigation.map(item => item.code)
     assert.equal(expectedCodes.length, matrix.exactNavigationCounts[profile.role], `${profile.label} matrix count`)
-    assert.ok(expectedCodes.length >= matrix.minimumNavigationEntries, `${profile.label} has fewer than six entries`)
+    assert.ok(expectedCodes.length >= matrix.minimumNavigationEntries,
+      `${profile.label} has fewer than ${matrix.minimumNavigationEntries} entries`)
     assert.deepEqual(navigation.map(item => item.code), expectedCodes, `${profile.label} navigation`)
     for (const entry of profile.contract.navigation) {
       const payload = await client.request(apiPath(entry.readApi))

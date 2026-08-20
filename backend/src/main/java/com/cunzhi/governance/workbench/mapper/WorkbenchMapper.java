@@ -8,6 +8,62 @@ import java.util.List;
 
 public interface WorkbenchMapper {
 
+    String OPERATION_ROWS_SQL = """
+            (
+              select concat('EVENT-', flow.id) as id, flow.created_at as createdAt,
+                     'EVENT' as module, '治理事件' as moduleLabel, flow.action,
+                     flow.action as actionLabel, operator_user.real_name as operatorName,
+                     concat('事件：', event.event_no) as objectLabel, grid.area_name as scopeLabel,
+                     'SUCCESS' as result, '已记录' as resultLabel
+              from event_flow flow
+              join governance_event event on event.id = flow.event_id
+              join grid_area grid on grid.id = event.grid_id
+              left join sys_user operator_user on operator_user.id = flow.operator_user_id
+              union all
+              select concat('TASK-', flow.id), flow.created_at,
+                     'TASK', '网格任务', flow.action, flow.action,
+                     operator_user.real_name, concat('任务：', task.task_no), grid.area_name,
+                     'SUCCESS', '已记录'
+              from task_flow flow
+              join work_task task on task.id = flow.task_id
+              join grid_area grid on grid.id = task.grid_id
+              left join sys_user operator_user on operator_user.id = flow.operator_user_id
+              union all
+              select concat('SENSITIVE-', access_log.id), access_log.created_at,
+                     'RESIDENT_SENSITIVE', '敏感访问', access_log.action, access_log.action,
+                     operator_user.real_name, '居民敏感访问记录', coalesce(grid.area_name, '历史范围未知'),
+                     'SUCCESS', '已记录'
+              from resident_sensitive_access_log access_log
+              join sys_user operator_user on operator_user.id = access_log.operator_user_id
+              left join grid_area grid on grid.id = access_log.scope_grid_id
+              union all
+              select concat('AUDIT-', audit.id), audit.created_at,
+                     audit.module,
+                     case audit.module when 'ATTACHMENT' then '附件下载' else '关键管理' end,
+                     audit.action,
+                     case audit.action
+                       when 'DOWNLOAD' then '下载附件'
+                       when 'USER_MANAGEMENT' then '用户管理'
+                       when 'ROLE_MANAGEMENT' then '角色管理'
+                       when 'MENU_MANAGEMENT' then '菜单管理'
+                       when 'CATEGORY_MANAGEMENT' then '事件类别管理'
+                       when 'GRID_MANAGEMENT' then '网格与责任区管理'
+                       when 'PASSWORD_CHANGE' then '修改密码'
+                       else audit.action
+                     end,
+                     operator_user.real_name,
+                     audit.object_path,
+                     case audit.module when 'ATTACHMENT' then '受控文件接口' else '管理端接口' end,
+                     audit.result,
+                     case when audit.result = 'SUCCESS'
+                       then concat('成功（HTTP ', audit.status_code, '）')
+                       else concat('失败（HTTP ', audit.status_code, '）')
+                     end
+              from operation_audit_log audit
+              left join sys_user operator_user on operator_user.id = audit.operator_user_id
+            ) operation_rows
+            """;
+
     @Select("""
             select
               (select count(*) from sys_user) as totalUsers,
@@ -78,14 +134,13 @@ public interface WorkbenchMapper {
 
     @Select("""
             <script>
-            select cast(application.id as char) as id, concat('服务申请：', catalog.service_name) as title,
-                   application.status, '/community/service' as route, application.created_at as occurredAt
-            from service_application application
-            join service_catalog catalog on catalog.id = application.service_catalog_id
-            where application.status in ('SUBMITTED', 'ACCEPTED', 'PROCESSING')
-              and application.grid_id in
+            select cast(event.id as char) as id, event.title,
+                   event.status, '/events' as route, event.reported_at as occurredAt
+            from governance_event event
+            where event.status = 'REPORTED'
+              and event.grid_id in
               <foreach collection="gridIds" item="gridId" open="(" separator="," close=")">#{gridId}</foreach>
-            order by application.created_at desc, application.id desc limit 10
+            order by event.reported_at desc, event.id desc limit 10
             </script>
             """)
     List<ItemRow> findCommunityFocus(@Param("gridIds") List<Long> gridIds);
@@ -101,20 +156,20 @@ public interface WorkbenchMapper {
     List<ItemRow> findGridFocus(@Param("userId") long userId);
 
     @Select("""
-            select cast(application.id as char) as id, concat('服务申请：', catalog.service_name) as title,
-                   application.status, '/resident/service' as route, application.created_at as occurredAt
-            from service_application application
-            join service_catalog catalog on catalog.id = application.service_catalog_id
-            where application.applicant_user_id = #{userId}
-            order by application.created_at desc, application.id desc limit 10
+            select cast(event.id as char) as id, event.title, event.status,
+                   '/resident/events' as route, event.reported_at as occurredAt
+            from governance_event event
+            where event.reporter_user_id = #{userId}
+              and event.status not in ('CLOSED', 'REJECTED', 'CANCELLED')
+            order by event.reported_at desc, event.id desc limit 10
             """)
     List<ItemRow> findResidentFocus(@Param("userId") long userId);
 
     @Select("""
-            select cast(announcement.id as char) as id, announcement.title, announcement.status,
-                   '/announcements' as route, coalesce(announcement.published_at, announcement.created_at) as occurredAt
-            from community_announcement announcement
-            order by announcement.created_at desc, announcement.id desc limit 10
+            select cast(event.id as char) as id, event.title, event.status,
+                   '/events' as route, event.reported_at as occurredAt
+            from governance_event event
+            order by event.reported_at desc, event.id desc limit 10
             """)
     List<ItemRow> findAdminRecent();
 
@@ -138,117 +193,63 @@ public interface WorkbenchMapper {
     List<ItemRow> findGridRecent(@Param("userId") long userId);
 
     @Select("""
-            select cast(announcement.id as char) as id, announcement.title, announcement.status,
-                   '/announcements' as route, announcement.published_at as occurredAt
-            from community_announcement announcement
-            where announcement.status = 'PUBLISHED'
-              and (announcement.audience_scope = 'GLOBAL' or announcement.community_id = #{communityId})
-            order by announcement.pinned desc, announcement.published_at desc, announcement.id desc limit 10
+            select cast(event.id as char) as id, event.title, event.status,
+                   '/resident/events' as route, event.reported_at as occurredAt
+            from governance_event event
+            where event.reporter_user_id = #{userId}
+            order by event.reported_at desc, event.id desc limit 10
             """)
-    List<ItemRow> findResidentRecent(@Param("communityId") Long communityId);
+    List<ItemRow> findResidentRecent(@Param("userId") long userId);
 
     @Select("""
             <script>
-            select * from (
-              select concat('EVENT-', flow.id) as id, flow.created_at as createdAt,
-                     'EVENT' as module, '治理事件' as moduleLabel, flow.action,
-                     flow.action as actionLabel, operator_user.real_name as operatorName,
-                     concat('事件：', event.event_no) as objectLabel, grid.area_name as scopeLabel,
-                     'SUCCESS' as result, '已记录' as resultLabel
-              from event_flow flow
-              join governance_event event on event.id = flow.event_id
-              join grid_area grid on grid.id = event.grid_id
-              left join sys_user operator_user on operator_user.id = flow.operator_user_id
-              union all
-              select concat('TASK-', flow.id), flow.created_at,
-                     'TASK', '网格任务', flow.action, flow.action,
-                     operator_user.real_name, concat('任务：', task.task_no), grid.area_name,
-                     'SUCCESS', '已记录'
-              from task_flow flow
-              join work_task task on task.id = flow.task_id
-              join grid_area grid on grid.id = task.grid_id
-              left join sys_user operator_user on operator_user.id = flow.operator_user_id
-              union all
-              select concat('SENSITIVE-', log.id), log.created_at,
-                     'RESIDENT_SENSITIVE', '敏感访问', log.action, log.action,
-                     operator_user.real_name, '居民敏感访问记录', coalesce(grid.area_name, '历史范围未知'),
-                     'SUCCESS', '已记录'
-              from resident_sensitive_access_log log
-              join sys_user operator_user on operator_user.id = log.operator_user_id
-              left join grid_area grid on grid.id = log.scope_grid_id
-              union all
-              select concat('ANNOUNCEMENT-', flow.id), flow.created_at,
-                     'ANNOUNCEMENT', '社区公告', flow.action, flow.action,
-                     operator_user.real_name, concat('公告：', announcement.announcement_no),
-                     case when announcement.audience_scope = 'GLOBAL' then '全局' else coalesce(community.area_name, '社区') end,
-                     'SUCCESS', '已记录'
-              from announcement_flow flow
-              join community_announcement announcement on announcement.id = flow.announcement_id
-              left join grid_area community on community.id = announcement.community_id
-              join sys_user operator_user on operator_user.id = flow.operator_user_id
-              union all
-              select concat('SERVICE-', flow.id), flow.created_at,
-                     'SERVICE_APPLICATION', '服务申请', flow.action, flow.action,
-                     operator_user.real_name, concat('服务申请：', application.application_no), grid.area_name,
-                     'SUCCESS', '已记录'
-              from service_application_flow flow
-              join service_application application on application.id = flow.application_id
-              join grid_area grid on grid.id = application.grid_id
-              join sys_user operator_user on operator_user.id = flow.operator_user_id
-            ) operation_rows
+            select id, createdAt, module, moduleLabel, action, actionLabel,
+                   operatorName, objectLabel, scopeLabel, result, resultLabel
+            from
+            """ + OPERATION_ROWS_SQL + """
             where 1 = 1
               <if test="module != null and module != ''">and module = #{module}</if>
-              <if test="keyword != null and keyword != ''">
-                and (operatorName like concat('%', #{keyword}, '%')
-                     or objectLabel like concat('%', #{keyword}, '%')
-                     or scopeLabel like concat('%', #{keyword}, '%'))
-              </if>
+              <if test="operator != null and operator != ''">and operatorName like concat('%', #{operator}, '%')</if>
+              <if test="object != null and object != ''">and objectLabel like concat('%', #{object}, '%')</if>
+              <if test="result != null and result != ''">and result = #{result}</if>
+              <if test="startAt != null">and createdAt &gt;= #{startAt}</if>
+              <if test="endAt != null">and createdAt &lt;= #{endAt}</if>
             order by createdAt desc, id desc
             limit #{size} offset #{offset}
             </script>
             """)
     List<OperationItemRow> findOperations(
             @Param("module") String module,
-            @Param("keyword") String keyword,
+            @Param("operator") String operator,
+            @Param("object") String object,
+            @Param("result") String result,
+            @Param("startAt") LocalDateTime startAt,
+            @Param("endAt") LocalDateTime endAt,
             @Param("offset") int offset,
             @Param("size") int size
     );
 
     @Select("""
             <script>
-            select count(*) from (
-              select flow.created_at as createdAt, 'EVENT' as module, operator_user.real_name as operatorName,
-                     concat('事件：', event.event_no) as objectLabel, grid.area_name as scopeLabel
-              from event_flow flow join governance_event event on event.id = flow.event_id
-              join grid_area grid on grid.id = event.grid_id left join sys_user operator_user on operator_user.id = flow.operator_user_id
-              union all
-              select flow.created_at, 'TASK', operator_user.real_name, concat('任务：', task.task_no), grid.area_name
-              from task_flow flow join work_task task on task.id = flow.task_id
-              join grid_area grid on grid.id = task.grid_id left join sys_user operator_user on operator_user.id = flow.operator_user_id
-              union all
-              select log.created_at, 'RESIDENT_SENSITIVE', operator_user.real_name, '居民敏感访问记录', coalesce(grid.area_name, '历史范围未知')
-              from resident_sensitive_access_log log join sys_user operator_user on operator_user.id = log.operator_user_id
-              left join grid_area grid on grid.id = log.scope_grid_id
-              union all
-              select flow.created_at, 'ANNOUNCEMENT', operator_user.real_name, concat('公告：', announcement.announcement_no),
-                     case when announcement.audience_scope = 'GLOBAL' then '全局' else coalesce(community.area_name, '社区') end
-              from announcement_flow flow join community_announcement announcement on announcement.id = flow.announcement_id
-              left join grid_area community on community.id = announcement.community_id join sys_user operator_user on operator_user.id = flow.operator_user_id
-              union all
-              select flow.created_at, 'SERVICE_APPLICATION', operator_user.real_name, concat('服务申请：', application.application_no), grid.area_name
-              from service_application_flow flow join service_application application on application.id = flow.application_id
-              join grid_area grid on grid.id = application.grid_id join sys_user operator_user on operator_user.id = flow.operator_user_id
-            ) operation_rows
+            select count(*) from
+            """ + OPERATION_ROWS_SQL + """
             where 1 = 1
               <if test="module != null and module != ''">and module = #{module}</if>
-              <if test="keyword != null and keyword != ''">
-                and (operatorName like concat('%', #{keyword}, '%')
-                     or objectLabel like concat('%', #{keyword}, '%')
-                     or scopeLabel like concat('%', #{keyword}, '%'))
-              </if>
+              <if test="operator != null and operator != ''">and operatorName like concat('%', #{operator}, '%')</if>
+              <if test="object != null and object != ''">and objectLabel like concat('%', #{object}, '%')</if>
+              <if test="result != null and result != ''">and result = #{result}</if>
+              <if test="startAt != null">and createdAt &gt;= #{startAt}</if>
+              <if test="endAt != null">and createdAt &lt;= #{endAt}</if>
             </script>
             """)
-    long countOperations(@Param("module") String module, @Param("keyword") String keyword);
+    long countOperations(
+            @Param("module") String module,
+            @Param("operator") String operator,
+            @Param("object") String object,
+            @Param("result") String result,
+            @Param("startAt") LocalDateTime startAt,
+            @Param("endAt") LocalDateTime endAt
+    );
 
     @Select("""
             select

@@ -138,7 +138,11 @@ const gridWorkerNavigationMigrationPath = "backend/src/main/resources/db/migrati
 const gridWorkerNavigationMigration = requireFile(gridWorkerNavigationMigrationPath);
 const roleWorkbenchMigrationPath = "backend/src/main/resources/db/migration/V10__role_workbenches.sql";
 const roleWorkbenchMigration = requireFile(roleWorkbenchMigrationPath);
-const migrationChain = `${migration}\n${registrationMigration}\n${privacyMigration}\n${accessMigration}\n${sensitiveAuditMigration}\n${governanceMigration}\n${passwordMigration}\n${gridWorkerNavigationMigration}\n${roleWorkbenchMigration}`;
+const operationAuditMigrationPath = "backend/src/main/resources/db/migration/V11__operation_audit_and_resident_profile.sql";
+const operationAuditMigration = requireFile(operationAuditMigrationPath);
+const openingNavigationMigrationPath = "backend/src/main/resources/db/migration/V12__opening_report_navigation_scope.sql";
+const openingNavigationMigration = requireFile(openingNavigationMigrationPath);
+const migrationChain = `${migration}\n${registrationMigration}\n${privacyMigration}\n${accessMigration}\n${sensitiveAuditMigration}\n${governanceMigration}\n${passwordMigration}\n${gridWorkerNavigationMigration}\n${roleWorkbenchMigration}\n${operationAuditMigration}\n${openingNavigationMigration}`;
 const pom = requireFile("backend/pom.xml");
 const applicationYaml = requireFile("backend/src/main/resources/application.yml");
 const packageText = requireFile("frontend/package.json");
@@ -541,24 +545,6 @@ for (const action of [
   "派发员创建独立任务",
   "网格员提交独立任务复核",
   "引导管理员复核独立任务",
-  "社区公告创建",
-  "社区公告发布",
-  "居民可见社区公告",
-  "社区公告撤回并对居民隐藏",
-  "社区公告流转顺序",
-  "居民读取可申请服务目录",
-  "居民服务申请提交",
-  "居民服务申请幂等令牌重试",
-  "社区受理服务申请",
-  "社区开始处理服务申请",
-  "社区办结服务申请",
-  "居民服务申请评分",
-  "服务申请流转顺序",
-  "创建巡查计划并原子生成任务",
-  "巡查任务接单",
-  "巡查任务提交复核",
-  "非派发管理员复核巡查任务",
-  "巡查任务流转顺序",
 ]) {
   assert(runtimeSmoke.includes(action), `Node API 闭环脚本缺少动作：${action}`);
 }
@@ -571,7 +557,7 @@ assert(effectiveBusinessTables.length === 17, `迁移链应形成 17 张业务�
 const migrationBusinessTables = [...new Set(
   [...migrationChain.matchAll(/create\s+table\s+([a-z0-9_]+)/gi)].map((match) => match[1])
 )];
-assert(migrationBusinessTables.length === 23, `V1—V10 迁移链应形成 23 张业务表，实际为 ${migrationBusinessTables.length}`);
+assert(migrationBusinessTables.length === 24, `V1—V12 迁移链应形成 24 张业务表，实际为 ${migrationBusinessTables.length}`);
 assert(new Set(tables).size === tables.length, "Flyway V1 存在重复表名");
 assert(!/create\s+table\s+if\s+not\s+exists/i.test(migration), "Flyway V1 不应静默跳过已存在的表");
 assert(!/on\s+duplicate\s+key/i.test(migration), "Flyway V1 种子不应静默覆盖冲突");
@@ -1042,6 +1028,8 @@ assert(sqlRelativePaths.includes(accessMigrationPath), "Flyway 迁移链缺少 V
 assert(sqlRelativePaths.includes(sensitiveAuditMigrationPath), "Flyway 迁移链缺少 V6 居民敏感字段访问审计迁移");
 assert(sqlRelativePaths.includes(governanceMigrationPath), "Flyway 迁移链缺少 V7 治理附件、导航与审计迁移");
 assert(sqlRelativePaths.includes(roleWorkbenchMigrationPath), "Flyway 迁移链缺少 V10 角色工作台迁移");
+assert(sqlRelativePaths.includes(operationAuditMigrationPath), "Flyway 迁移链缺少 V11 操作审计迁移");
+assert(sqlRelativePaths.includes(openingNavigationMigrationPath), "Flyway 迁移链缺少 V12 开题可见导航迁移");
 assert(
   sqlRelativePaths.every((file) => file.startsWith(flywayPrefix)),
   `SQL 必须全部位于 Flyway 迁移目录，实际为：${sqlRelativePaths.join(", ")}`
@@ -1088,18 +1076,23 @@ const roleWorkbenchRuntimeTables = new Set(["flyway_schema_history"]);
 assert(roleWorkbenchMatrix?.contractVersion === 1, "角色工作台合同缺少 contractVersion=1");
 assert(roleWorkbenchRoleCodes.length === 4, "角色工作台合同必须精确包含四个角色");
 assert(
-  roleWorkbenchMatrix?.minimumNavigationEntries >= 6,
-  "角色工作台合同的入口最低数量必须至少为 6"
+  roleWorkbenchMatrix?.minimumNavigationEntries >= 4,
+  "角色工作台合同的入口最低数量必须至少为 4"
 );
 for (const roleCode of roleWorkbenchRoleCodes) {
   const role = roleWorkbenchRoles[roleCode];
   const navigation = role?.navigation || [];
+  const hiddenRoutes = role?.hiddenRoutes || [];
   const expectedCount = roleWorkbenchMatrix?.exactNavigationCounts?.[roleCode];
   assert(Boolean(role), `角色工作台合同缺少角色：${roleCode}`);
-  assert(navigation.length >= (roleWorkbenchMatrix?.minimumNavigationEntries || 6), `${roleCode} 导航入口少于 6 个`);
+  assert(navigation.length >= (roleWorkbenchMatrix?.minimumNavigationEntries || 4), `${roleCode} 导航入口少于 4 个`);
   assert(navigation.length === expectedCount, `${roleCode} 导航入口数量应为 ${expectedCount}，实际为 ${navigation.length}`);
   assert(new Set(navigation.map((item) => item.code)).size === navigation.length, `${roleCode} 导航编码重复`);
   assert(new Set(navigation.map((item) => item.routePath)).size === navigation.length, `${roleCode} 导航路由重复`);
+  assert(
+    hiddenRoutes.every((routePath) => !navigation.some((item) => item.routePath === routePath)),
+    `${roleCode} 开题隐藏路由仍出现在导航合同中`
+  );
   assert((role?.writeGroups || []).length >= 2, `${roleCode} 主责写操作组少于 2 组`);
   assert((role?.stateTransitions || []).length >= 2, `${roleCode} 状态流转合同少于 2 条`);
   for (const transition of role?.stateTransitions || []) {

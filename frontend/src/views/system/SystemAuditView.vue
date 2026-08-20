@@ -12,8 +12,11 @@
     <div class="workspace-panel audit-panel">
       <div class="query-toolbar">
         <el-form class="query-bar" :inline="true" @submit.native.prevent="search">
-          <el-form-item label="关键词"><el-input v-model.trim="query.keyword" clearable placeholder="操作人、对象或范围" /></el-form-item>
+          <el-form-item label="操作人"><el-input v-model.trim="query.operator" clearable placeholder="姓名" /></el-form-item>
+          <el-form-item label="业务对象"><el-input v-model.trim="query.object" clearable placeholder="编号或接口路径" /></el-form-item>
           <el-form-item label="模块"><el-select v-model="query.module" clearable placeholder="全部模块"><el-option v-for="item in modules" :key="item.value" :label="item.label" :value="item.value" /></el-select></el-form-item>
+          <el-form-item label="结果"><el-select v-model="query.result" clearable placeholder="全部结果"><el-option label="成功" value="SUCCESS" /><el-option label="失败" value="FAILURE" /></el-select></el-form-item>
+          <el-form-item label="时间范围"><el-date-picker v-model="query.range" type="datetimerange" value-format="yyyy-MM-dd'T'HH:mm:ss" start-placeholder="开始时间" end-placeholder="结束时间" range-separator="至" /></el-form-item>
           <el-form-item><el-button type="primary" native-type="submit">查询</el-button><el-button @click="reset">重置</el-button></el-form-item>
         </el-form>
       </div>
@@ -50,13 +53,13 @@ export default {
       total: 0,
       page: 1,
       size: 20,
-      query: { keyword: '', module: '' },
+      query: { operator: '', object: '', module: '', result: '', range: [] },
       modules: [
         { value: 'EVENT', label: '事件' },
         { value: 'TASK', label: '任务' },
         { value: 'RESIDENT_SENSITIVE', label: '敏感访问' },
-        { value: 'ANNOUNCEMENT', label: '公告' },
-        { value: 'SERVICE_APPLICATION', label: '服务申请' }
+        { value: 'ATTACHMENT', label: '附件下载' },
+        { value: 'SYSTEM_MANAGEMENT', label: '关键管理' }
       ]
     }
   },
@@ -76,7 +79,17 @@ export default {
       this.loading = true
       this.error = ''
       try {
-        const result = await listSystemOperations({ page: this.page, size: this.size, keyword: this.query.keyword || undefined, module: this.query.module || undefined })
+        const range = Array.isArray(this.query.range) ? this.query.range : []
+        const result = await listSystemOperations({
+          page: this.page,
+          size: this.size,
+          operator: this.query.operator || undefined,
+          object: this.query.object || undefined,
+          module: this.query.module || undefined,
+          result: this.query.result || undefined,
+          startAt: range[0] || undefined,
+          endAt: range[1] || undefined
+        })
         this.items = Array.isArray(result) ? result : (result && result.items) || []
         this.total = Number(result && result.total) || this.items.length
       } catch (error) {
@@ -84,7 +97,7 @@ export default {
       } finally { this.loading = false }
     },
     search() { this.page = 1; return this.load() },
-    reset() { this.query = { keyword: '', module: '' }; return this.search() },
+    reset() { this.query = { operator: '', object: '', module: '', result: '', range: [] }; return this.search() },
     changePage(page) { this.page = page; return this.load() },
     formatDate(value) { return value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '—' }
   }

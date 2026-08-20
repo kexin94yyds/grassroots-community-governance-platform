@@ -34,9 +34,11 @@ backend/src/main/resources/db/migration/V7__governance_attachment_navigation_and
 backend/src/main/resources/db/migration/V8__password_lifecycle.sql
 backend/src/main/resources/db/migration/V9__grid_worker_navigation_scope.sql
 backend/src/main/resources/db/migration/V10__role_workbenches.sql
+backend/src/main/resources/db/migration/V11__operation_audit_and_resident_profile.sql
+backend/src/main/resources/db/migration/V12__opening_report_navigation_scope.sql
 ```
 
-V1 包含 15 张业务表、三类后台角色和首批权限；V2—V9 依次补齐角色生命周期、居民注册、隐私、会话安全、敏感审计、附件、强制改密和导航/底层权限分离。V10 新增公告、服务目录与申请、巡查计划及其流转，形成 23 张业务表、4 个固定角色和 46 个业务权限码。迁移一旦被正式环境执行，就视为已发布；之后只新增更高版本，不回改 V1 至 V10。
+V1 包含 15 张业务表、三类后台角色和首批权限；V2—V10 依次补齐角色生命周期、居民注册、隐私、会话安全、附件、工作台和保留扩展。V11 新增统一操作审计，V12 只将可见导航收敛到开题报告范围，形成 24 张业务表、4 个固定角色和 46 个业务权限码。迁移一旦被正式环境执行，就视为已发布；之后只新增更高版本，不回改 V1 至 V12。
 
 后端读取以下环境变量：
 
@@ -72,7 +74,7 @@ export DB_PASSWORD='<验证库账号密码>'
 export DATA_ENCRYPTION_KEY="$(openssl rand -base64 32)"
 ```
 
-后端首次启动后，使用只读查询核对 V1 至 V10 均成功且业务表数量符合预期：
+后端首次启动后，使用只读查询核对 V1 至 V12 均成功且业务表数量符合预期：
 
 ```bash
 mysql --host=localhost --port=3306 --user="$DB_USERNAME" --password community_governance_validation_20260731
@@ -97,12 +99,12 @@ where table_schema = 'community_governance_validation_20260731'
 
 | 项目 | 本轮必须核对的结果 |
 |---|---|
-| Flyway | V1 至 V10 均 `success=1`，当前版本为 10 |
-| 业务表 | `information_schema` 返回 23（不含 `flyway_schema_history`） |
-| 种子 | 4 个固定角色、46 个权限码；动态导航精确为 14/11/7/7 |
-| 后端 | JDK 17 下 100 项测试与可执行 JAR 均成功 |
+| Flyway | V1 至 V12 均 `success=1`，当前版本为 12 |
+| 业务表 | `information_schema` 返回 24（不含 `flyway_schema_history`） |
+| 种子 | 4 个固定角色、46 个权限码；开题可见导航精确为 11/6/5/4 |
+| 后端 | JDK 17 下 104 项测试与可执行 JAR 均成功 |
 | API 闭环 | 旧业务闭环、新四角色统计、16 个写权限探针及 P1 生命周期全部 `PASS` |
-| 浏览器 | 四角色 39 个入口、每角色 2 个写交互，以及管理员/居民综合 E2E 全部通过；控制台、页面、站内请求及异常 API 响应为 0 |
+| 浏览器 | 四角色 26 个开题入口、每角色 2 个核心写交互，以及管理员/居民综合 E2E 全部通过；控制台、页面、站内请求及异常 API 响应为 0 |
 
 V3 验收还应覆盖：工作人员注册保持 `PENDING/DISABLED`、居民身份三字段不匹配时不创建账号、管理员批准后角色与居民档案唯一绑定、居民账号只能访问 `/api/resident-portal/**` 授权数据。
 V4 验收还应覆盖：带连字符的居民手机号仍可匹配档案，且待审核居民账号的 `sys_user.phone` 为 `NULL`。附件验收应为本轮配置独立的 `ATTACHMENT_STORAGE_ROOT`，覆盖合法 JPEG/PNG/PDF、声明 MIME 与内容签名不一致被拒绝、授权列表/下载以及下载字节一致性。

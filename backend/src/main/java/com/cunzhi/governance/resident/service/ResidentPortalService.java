@@ -7,6 +7,7 @@ import com.cunzhi.governance.event.dto.EventSummary;
 import com.cunzhi.governance.event.service.EventService;
 import com.cunzhi.governance.resident.dto.ResidentEventRequest;
 import com.cunzhi.governance.resident.dto.ResidentPortalOverview;
+import com.cunzhi.governance.resident.dto.ResidentPortalProfileUpdateRequest;
 import com.cunzhi.governance.resident.dto.ResidentSummary;
 import com.cunzhi.governance.system.security.RoleCodes;
 import com.cunzhi.governance.system.service.DataScopeService;
@@ -55,10 +56,14 @@ public class ResidentPortalService {
         ));
     }
 
+    public ResidentSummary updateProfile(ResidentPortalProfileUpdateRequest request) {
+        requireResidentRole();
+        return residentService.updateCurrentUserProfile(request);
+    }
+
     private void requireResidentRole() {
         if (!dataScopeService.currentUser().roles().contains(RoleCodes.RESIDENT)) {
             throw new BusinessException(ErrorCode.FORBIDDEN, "仅居民账号可访问居民服务台");
         }
     }
 }
-

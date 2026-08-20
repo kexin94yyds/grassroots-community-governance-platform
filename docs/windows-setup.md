@@ -54,7 +54,7 @@ cd backend
 mvn clean spring-boot:run
 ```
 
-首次启动会由 Flyway 依次执行 V1—V10。成功创建管理员后，应关闭引导开关并重新启动：
+首次启动会由 Flyway 依次执行 V1—V12。成功创建管理员后，应关闭引导开关并重新启动：
 
 ```powershell
 $env:BOOTSTRAP_ADMIN_ENABLED = "false"
@@ -92,34 +92,34 @@ order by installed_rank;
 
 必须满足：
 
-- V1—V10 全部 `success = 1`。
-- 最大版本为 10。
-- V10 名称为 `role workbenches`。
+- V1—V12 全部 `success = 1`。
+- 最大版本为 12。
+- V12 名称为 `opening report navigation scope`。
 
-V10 在 V9 的底层权限分离上建立四个完整工作台，并新增公告、服务申请和巡查闭环。网格员仍可读取责任范围内的关联信息，但不能维护网格、居民或查看敏感字段。
+V12 只将四角色默认导航收敛到开题报告范围；保留的公告、服务和独立巡查扩展代码及数据不删除。网格员仍可读取责任范围内的关联信息，但不能维护网格、居民或查看敏感字段。
 
 ## 6. 四个身份看起来完全相同时
 
 按顺序检查：
 
-1. 在源码目录执行 `git pull`，确认包含 `V10__role_workbenches.sql`。
+1. 在源码目录执行 `git pull`，确认包含 `V12__opening_report_navigation_scope.sql`。
 2. 停止旧后端进程，再重新启动；只重启前端不会执行 Flyway。
-3. 用第 5 节 SQL 确认数据库最大版本为 10。
+3. 用第 5 节 SQL 确认数据库最大版本为 12。
 4. 前端重新执行 `npm ci` 和 `npm run serve`，不要继续使用旧 `dist` 或旧开发进程。
 5. 在页面右上角执行“退出登录”，不要只在地址栏改页面。
 6. 清除 `localhost:5173` 的站点 Cookie 后重新登录，确保上一角色 Session 和导航缓存已清理。
 7. 查看浏览器开发者工具 Network：
    - `/api/auth/me` 的 `roles` 应与当前账号一致；
-   - `/api/auth/navigation` 应分别返回 14/11/7/7 个入口；
+   - `/api/auth/navigation` 应分别返回 11/6/5/4 个开题入口；
    - 不能用前端隐藏代替后端接口 403。
 
 ## 7. 自动化验收
 
 仓库提供完整的四角色验证：
 
-- `scripts/role-workbench-matrix.json`：14/11/7/7 导航、每角色两组主责写操作和统计接口的唯一合同。
+- `scripts/role-workbench-matrix.json`：11/6/5/4 开题导航、每角色两组核心写操作和统计接口的唯一合同。
 - `scripts/role-navigation-smoke.mjs`：验证四角色导航、统计、16 个写权限探针和越权拒绝。
-- `scripts/role-navigation-ui-e2e.py`：同一真实浏览器逐一点击 39 个入口，验证每角色两个写交互、首页落点、隐藏地址、退出缓存，以及控制台/页面/站内网络/异常 API 为 0。
-- `scripts/validation-pipeline.sh`：从 V1 迁移至 V10，并串联后端、前端、旧业务闭环、四角色、注册、P1、敏感扫描和清理复核。
+- `scripts/role-navigation-ui-e2e.py`：同一真实浏览器逐一点击 26 个开题入口，验证每角色两个核心写交互、首页落点、隐藏地址、退出缓存，以及控制台/页面/站内网络/异常 API 为 0。
+- `scripts/validation-pipeline.sh`：从 V1 迁移至 V12，并串联后端、前端、旧业务闭环、四角色、注册、P1、审计、敏感扫描和清理复核。
 
 验证脚本必须使用隔离数据库和临时账号；密码只通过环境变量提供，不得写入源码、命令历史、截图或日志。

@@ -6,6 +6,8 @@ import com.cunzhi.governance.attachment.service.EventAttachmentService;
 import com.cunzhi.governance.event.dto.EventSummary;
 import com.cunzhi.governance.resident.dto.ResidentEventRequest;
 import com.cunzhi.governance.resident.dto.ResidentPortalOverview;
+import com.cunzhi.governance.resident.dto.ResidentPortalProfileUpdateRequest;
+import com.cunzhi.governance.resident.dto.ResidentSummary;
 import com.cunzhi.governance.resident.service.ResidentPortalService;
 import jakarta.validation.Valid;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -13,6 +15,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -49,6 +52,13 @@ public class ResidentPortalController {
     @GetMapping("/overview")
     public ApiResponse<ResidentPortalOverview> overview() {
         return ApiResponse.ok(residentPortalService.overview());
+    }
+
+    @PutMapping("/profile")
+    public ApiResponse<ResidentSummary> updateProfile(
+            @Valid @RequestBody ResidentPortalProfileUpdateRequest request
+    ) {
+        return ApiResponse.ok(residentPortalService.updateProfile(request));
     }
 
     @PostMapping("/events")

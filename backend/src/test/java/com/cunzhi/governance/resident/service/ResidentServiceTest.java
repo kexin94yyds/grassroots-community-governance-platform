@@ -6,6 +6,7 @@ import com.cunzhi.governance.common.error.ErrorCode;
 import com.cunzhi.governance.common.id.BusinessNumberGenerator;
 import com.cunzhi.governance.resident.dto.ResidentSensitiveSearchRequest;
 import com.cunzhi.governance.resident.dto.ResidentSensitiveViewRequest;
+import com.cunzhi.governance.resident.dto.ResidentPortalProfileUpdateRequest;
 import com.cunzhi.governance.resident.mapper.HouseholdMapper;
 import com.cunzhi.governance.resident.mapper.ResidentMapper;
 import com.cunzhi.governance.resident.mapper.ResidentSensitiveAccessMapper;
@@ -170,6 +171,42 @@ class ResidentServiceTest {
         assertThat(result.status()).isEqualTo("MOVED");
         verify(systemUserMapper).disableLinkedResidentUser(22L);
         verify(residentMapper).updateStatus(15L, "MOVED", 0);
+    }
+
+    @Test
+    void currentResidentCanOnlyUpdateEncryptedPhoneAndAddress() {
+        AuthenticatedUser residentUser = new AuthenticatedUser(
+                23L, "resident", "hash", "王居民", true,
+                Set.of("RESIDENT"), Set.of("resident:portal")
+        );
+        ResidentMapper.ResidentRow current = residentRow();
+        ResidentMapper.ResidentRow updated = new ResidentMapper.ResidentRow(
+                current.id(), current.residentNo(), current.gridId(), current.gridName(),
+                current.householdId(), current.householdNo(), current.realName(), current.gender(),
+                current.birthDate(), current.idCardLast4(), "5678", "更新后的联系地址",
+                current.householder(), null, current.remark(), current.status(), 1
+        );
+        byte[] phoneCiphertext = {9, 8, 7};
+        when(dataScopeService.currentUser()).thenReturn(residentUser);
+        when(residentMapper.findByUserId(23L)).thenReturn(Optional.of(current));
+        when(sensitiveDataCodec.encode("13900005678")).thenReturn(
+                new SensitiveDataCodec.Encoded(phoneCiphertext, "phone-hash", "5678")
+        );
+        when(residentMapper.updateCurrentUserContact(
+                15L, phoneCiphertext, "phone-hash", "5678", "更新后的联系地址", 0
+        )).thenReturn(1);
+        when(residentMapper.findById(15L)).thenReturn(Optional.of(updated));
+
+        var result = service().updateCurrentUserProfile(new ResidentPortalProfileUpdateRequest(
+                "139-0000 5678", " 更新后的联系地址 ", 0
+        ));
+
+        assertThat(result.address()).isEqualTo("更新后的联系地址");
+        assertThat(result.phoneMasked()).endsWith("5678");
+        verify(sensitiveDataCodec).encode("13900005678");
+        verify(residentMapper).updateCurrentUserContact(
+                15L, phoneCiphertext, "phone-hash", "5678", "更新后的联系地址", 0
+        );
     }
 
     private ResidentService service() {

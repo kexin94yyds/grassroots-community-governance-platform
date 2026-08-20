@@ -131,6 +131,25 @@
           <div><dt>联系电话</dt><dd>{{ display(profile.phoneMasked) }}</dd></div>
           <div><dt>联系地址</dt><dd>{{ display(profile.address) }}</dd></div>
         </dl>
+        <section class="resident-profile-maintenance">
+          <div>
+            <p class="panel-kicker">EDITABLE CONTACT</p>
+            <h3>维护联系信息</h3>
+            <p>仅可更新联系地址和新手机号；姓名、身份证、所属网格、家庭户、重点标签和档案状态仍由社区工作人员核验维护。</p>
+          </div>
+          <el-alert v-if="profileError" class="form-alert" :title="profileError" type="error" show-icon :closable="false" />
+          <el-form ref="profileForm" :model="profileForm" :rules="profileRules" label-position="top" @submit.native.prevent="saveProfile">
+            <div class="profile-contact-grid">
+              <el-form-item label="联系地址" prop="address">
+                <el-input v-model.trim="profileForm.address" maxlength="255" placeholder="请输入当前常住地址" />
+              </el-form-item>
+              <el-form-item label="新手机号（选填）" prop="phone">
+                <el-input v-model.trim="profileForm.phone" maxlength="30" placeholder="留空则保留当前手机号" autocomplete="tel" />
+              </el-form-item>
+            </div>
+            <el-button type="primary" :loading="profileSaving" @click="saveProfile">保存联系信息</el-button>
+          </el-form>
+        </section>
       </article>
     </template>
 
@@ -222,6 +241,7 @@ import {
   getResidentOverview,
   listResidentEventAttachments,
   reportResidentEvent,
+  updateResidentProfile,
   uploadResidentEventAttachment
 } from '../../api/residentPortal'
 import { EVENT_STATUS, STATUS_TAG_TYPE } from '../../constants/domain'
@@ -240,7 +260,10 @@ export default {
       submitting: false,
       error: '',
       formError: '',
+      profileError: '',
+      profileSaving: false,
       profile: {},
+      profileForm: { phone: '', address: '' },
       categories: [],
       events: [],
       eventStatus: EVENT_STATUS,
@@ -261,6 +284,10 @@ export default {
         severity: [{ required: true, message: '请选择紧急程度', trigger: 'change' }],
         title: [{ required: true, min: 2, max: 160, message: '标题需为 2-160 个字符', trigger: 'blur' }],
         description: [{ required: true, min: 5, max: 10000, message: '请填写至少 5 个字符的详细情况', trigger: 'blur' }]
+      },
+      profileRules: {
+        address: [{ required: true, max: 255, message: '请填写联系地址', trigger: 'blur' }],
+        phone: [{ pattern: /^$|^\+?[0-9 -]{7,30}$/, message: '手机号格式不正确', trigger: 'blur' }]
       }
     }
   },
@@ -279,7 +306,7 @@ export default {
       return {
         report: '向所属网格提交一件真实民生事项，附件会随事项保留。',
         events: '查看本人上报事项的受理、派发、处置和办结进度。',
-        profile: '查看已核验的本人居民档案与所属网格信息。'
+        profile: '查看已核验的本人居民档案，并维护允许修改的联系信息。'
       }[this.routeMode] || '查看本人社区档案，提交民生事项，并跟踪每一次回应。'
     },
     reportUploadSummary() {
@@ -310,6 +337,8 @@ export default {
       try {
         const overview = await getResidentOverview()
         this.profile = overview.profile || {}
+        this.profileForm.address = this.profile.address || ''
+        this.profileForm.phone = ''
         this.categories = overview.categories || []
         this.events = overview.events || []
       } catch (error) {
@@ -317,6 +346,30 @@ export default {
       } finally {
         this.loading = false
       }
+    },
+    saveProfile() {
+      if (this.profileSaving) return
+      this.$refs.profileForm.validate(async valid => {
+        if (!valid) return
+        this.profileSaving = true
+        this.profileError = ''
+        try {
+          const updated = await updateResidentProfile({
+            address: this.profileForm.address,
+            phone: this.profileForm.phone || null,
+            version: this.profile.version
+          })
+          this.profile = updated || this.profile
+          this.profileForm.address = this.profile.address || ''
+          this.profileForm.phone = ''
+          this.$message.success('联系信息已更新')
+          this.$nextTick(() => this.$refs.profileForm && this.$refs.profileForm.clearValidate())
+        } catch (error) {
+          this.profileError = errorMessage(error)
+        } finally {
+          this.profileSaving = false
+        }
+      })
     },
     submit() {
       if (this.submitting) return
@@ -557,6 +610,11 @@ export default {
 .resident-profile-note dl > div { display: grid; grid-template-columns: 100px minmax(0, 1fr); gap: 10px; padding: 12px 0; border-top: 1px solid var(--line); }
 .resident-profile-note dt { color: var(--muted); }
 .resident-profile-note dd { margin: 0; color: var(--ink); }
+.resident-profile-maintenance { display: grid; grid-template-columns: minmax(230px, .72fr) minmax(0, 1.28fr); gap: 28px; margin-top: 26px; padding-top: 24px; border-top: 1px solid var(--line); }
+.resident-profile-maintenance h3 { margin: 0 0 8px; font-family: var(--font-display); font-size: 20px; }
+.resident-profile-maintenance > div > p:not(.panel-kicker) { margin: 0; color: var(--muted); line-height: 1.7; }
+.profile-contact-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+@media (max-width: 760px) { .resident-profile-maintenance { grid-template-columns: 1fr; gap: 18px; } .profile-contact-grid { grid-template-columns: 1fr; gap: 0; } }
 @media (max-width: 560px) { .resident-profile-note { padding: 22px 18px; } .resident-profile-note dl { grid-template-columns: 1fr; } }
 @media (max-width: 560px) { .ledger-actions { align-items: flex-start; flex-direction: column; gap: 2px; } .ledger-actions .el-button { margin-top: 0; } }
 @media (max-width: 1080px) { .resident-workspace { grid-template-columns: 1fr; } }

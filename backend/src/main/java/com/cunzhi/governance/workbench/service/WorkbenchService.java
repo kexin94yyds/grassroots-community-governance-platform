@@ -20,6 +20,7 @@ import org.springframework.stereotype.Service;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.time.LocalDateTime;
 
 @Service
 public class WorkbenchService {
@@ -47,11 +48,8 @@ public class WorkbenchService {
         return new WorkbenchSummary(RoleCodes.SYSTEM_ADMIN, "全区治理与系统运行", Map.of(
                 "totalUsers", row.totalUsers(),
                 "pendingRegistrations", row.pendingRegistrations(),
-                "publishedAnnouncements", row.publishedAnnouncements(),
-                "openApplications", row.openApplications(),
-                "activePatrolPlans", row.activePatrolPlans(),
                 "openEvents", row.openEvents()
-        ), toItems("REGISTRATION", mapper.findAdminFocus()), toItems("ANNOUNCEMENT", mapper.findAdminRecent()));
+        ), toItems("REGISTRATION", mapper.findAdminFocus()), toItems("EVENT", mapper.findAdminRecent()));
     }
 
     public WorkbenchSummary communitySummary() {
@@ -65,10 +63,8 @@ public class WorkbenchService {
         return new WorkbenchSummary(RoleCodes.COMMUNITY_STAFF, "所属社区子网格", Map.of(
                 "reportedEvents", row.reportedEvents(),
                 "pendingReviews", row.pendingReviews(),
-                "openApplications", row.openApplications(),
-                "activePatrolPlans", row.activePatrolPlans(),
                 "activeResidents", row.activeResidents()
-        ), toItems("SERVICE_APPLICATION", mapper.findCommunityFocus(gridIds)),
+        ), toItems("EVENT", mapper.findCommunityFocus(gridIds)),
                 toItems("EVENT", mapper.findCommunityRecent(gridIds)));
     }
 
@@ -84,7 +80,6 @@ public class WorkbenchService {
                 "processing", row.processing(),
                 "pendingReview", row.pendingReview(),
                 "overdue", row.overdue(),
-                "activePatrolPlans", row.activePatrolPlans(),
                 "reportsLast7Days", row.reportsLast7Days()
         ), toItems("TASK", mapper.findGridFocus(user.id())), toItems("TASK", mapper.findGridRecent(user.id())));
     }
@@ -96,25 +91,39 @@ public class WorkbenchService {
         Long communityId = dataScopeMapper.findParentCommunityId(resident.gridId());
         WorkbenchMapper.ResidentMetricRow row = mapper.residentMetrics(user.id(), communityId);
         return new WorkbenchSummary(RoleCodes.RESIDENT, "本人事项与社区服务", Map.of(
-                "openEvents", row.openEvents(),
-                "openApplications", row.openApplications(),
-                "pendingRatings", row.pendingRatings(),
-                "visibleAnnouncements", row.visibleAnnouncements()
-        ), toItems("SERVICE_APPLICATION", mapper.findResidentFocus(user.id())),
-                toItems("ANNOUNCEMENT", mapper.findResidentRecent(communityId)));
+                "openEvents", row.openEvents()
+        ), toItems("EVENT", mapper.findResidentFocus(user.id())),
+                toItems("EVENT", mapper.findResidentRecent(user.id())));
     }
 
-    public PageResponse<SystemOperationView> operations(String module, String keyword, int page, int size) {
+    public PageResponse<SystemOperationView> operations(
+            String module,
+            String operator,
+            String object,
+            String result,
+            LocalDateTime startAt,
+            LocalDateTime endAt,
+            int page,
+            int size
+    ) {
         requireRolePermission(RoleCodes.SYSTEM_ADMIN, PermissionCodes.SYSTEM_AUDIT_READ);
         String normalizedModule = normalizeModule(module);
-        String normalizedKeyword = keyword == null || keyword.isBlank() ? null : keyword.trim();
+        String normalizedOperator = normalizeText(operator);
+        String normalizedObject = normalizeText(object);
+        String normalizedResult = normalizeResult(result);
+        if (startAt != null && endAt != null && startAt.isAfter(endAt)) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "审计开始时间不能晚于结束时间");
+        }
         List<SystemOperationView> items = mapper.findOperations(
-                normalizedModule, normalizedKeyword, (page - 1) * size, size
+                normalizedModule, normalizedOperator, normalizedObject, normalizedResult,
+                startAt, endAt, (page - 1) * size, size
         ).stream().map(row -> new SystemOperationView(
                 row.id(), row.createdAt(), row.module(), row.moduleLabel(), row.action(), row.actionLabel(),
                 row.operatorName(), row.objectLabel(), row.scopeLabel(), row.result(), row.resultLabel()
         )).toList();
-        return new PageResponse<>(items, mapper.countOperations(normalizedModule, normalizedKeyword), page, size);
+        return new PageResponse<>(items, mapper.countOperations(
+                normalizedModule, normalizedOperator, normalizedObject, normalizedResult, startAt, endAt
+        ), page, size);
     }
 
     public SystemHealthView health() {
@@ -161,10 +170,28 @@ public class WorkbenchService {
             return null;
         }
         String normalized = module.trim();
-        if (!List.of("EVENT", "TASK", "RESIDENT_SENSITIVE", "ANNOUNCEMENT", "SERVICE_APPLICATION").contains(normalized)) {
+        if (!List.of(
+                "EVENT", "TASK", "RESIDENT_SENSITIVE", "ATTACHMENT", "SYSTEM_MANAGEMENT"
+        ).contains(normalized)) {
             throw new BusinessException(ErrorCode.VALIDATION_ERROR, "未知审计模块");
         }
         return normalized;
+    }
+
+    private String normalizeResult(String result) {
+        String normalized = normalizeText(result);
+        if (normalized == null) {
+            return null;
+        }
+        String value = normalized.toUpperCase();
+        if (!List.of("SUCCESS", "FAILURE").contains(value)) {
+            throw new BusinessException(ErrorCode.VALIDATION_ERROR, "未知审计结果");
+        }
+        return value;
+    }
+
+    private String normalizeText(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
     }
 
     private List<WorkbenchItem> toItems(String type, List<WorkbenchMapper.ItemRow> rows) {

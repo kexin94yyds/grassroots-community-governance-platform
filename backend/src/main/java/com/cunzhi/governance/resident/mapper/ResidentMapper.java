@@ -231,6 +231,30 @@ public interface ResidentMapper {
     );
 
     @Update("""
+            <script>
+            update resident
+            <set>
+              address = #{address},
+              <if test="phoneCiphertext != null">
+                phone_ciphertext = #{phoneCiphertext},
+                phone_hash = #{phoneHash},
+                phone_last4 = #{phoneLast4},
+              </if>
+              version = version + 1
+            </set>
+            where id = #{id} and status = 'ACTIVE' and version = #{version}
+            </script>
+            """)
+    int updateCurrentUserContact(
+            @Param("id") long id,
+            @Param("phoneCiphertext") byte[] phoneCiphertext,
+            @Param("phoneHash") String phoneHash,
+            @Param("phoneLast4") String phoneLast4,
+            @Param("address") String address,
+            @Param("version") int version
+    );
+
+    @Update("""
             update resident set status = #{status}, version = version + 1
             where id = #{id} and version = #{version}
             """)
